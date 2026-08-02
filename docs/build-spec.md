@@ -285,17 +285,41 @@ pub struct Features {
 
 ### 6.2 Interfaz Junta → ScoreEngine
 
-La Junta expone estas funciones `view` (O(1) — lee agregados guardados y deriva las features temporales del reloj; ADR-0003). El ScoreEngine y el front las llaman vía `sol_interface!`.
+La Junta expone estas funciones `view` (O(1) — lee agregados guardados y deriva las features temporales del reloj; ADR-0003). Firmas **verificadas contra el contrato ya implementado**:
 
 ```
-history(junta_id: u32, member: address) -> Features
-    // las 8 features de §6.1, del PAR (junta, miembro) — ADR-0001
-verify_integrity(junta_id: u32) -> (aportado: U256, distribuido: U256, balance_real: U256, cuadra: bool)
-    // cuadra ⇔ aportado − distribuido == mUSDC.balanceOf(junta); ledger externo, NO espejo interno — ADR-0004
-cycle_coverage(junta_id: u32) -> (ciclo: u32, pagadas: u32, total: u32)   // "Ciclo N: k de M" — ADR-0004
+history(junta_id: u32, member: address)
+    -> (tasa_cumplimiento: i128, pagos_puntuales: u32, pagos_atrasados: u32, defaults: u32,
+        atraso_max_periodos: i128, defaults_tras_cobro: u32, antiguedad_periodos: u32,
+        disputas_perdidas: u32)
+    // las 8 features de §6.1 en orden, del PAR (junta, miembro) — ADR-0001.
+    // Se devuelve como tupla y no como struct: al nivel de ABI es idéntico y evita
+    // problemas de codificación entre contratos.
+
+verify_integrity() -> (aportado: U256, distribuido: U256, saldo_real: U256, cuadra: bool)
+    // SIN junta_id — es del CONTRATO COMPLETO. Ver la nota de abajo.
+    // cuadra ⇔ aportado − distribuido == mUSDC.balanceOf(contrato)
+
+junta_state(junta_id: u32)
+    -> (pozo: U256, ciclo: u32, turno: u32, miembros: u32, aportado: U256, distribuido: U256)
+    // los números DE ESA junta, para pintar la página
+
+cycle_coverage(junta_id: u32) -> (ciclo: u32, pagadas: u32, total: u32)   // "Ciclo N: k de M"
+
+miembros(junta_id: u32) -> address[]
 ```
 
-`history` es la más importante; `verify_integrity` y `cycle_coverage` alimentan el QR (§C8). **No hay `check_solvencia` acá** — la solvencia vive en el Pool (§6.7, ADR-0004).
+> **Corrección al ADR-0004, que la implementación obligó a hacer.** Aquel decía que la
+> integridad era `aportado − distribuido == balanceOf(junta)`. Pero el ADR-0001 puso
+> **muchas juntas dentro de un mismo contrato**, y `balanceOf` devuelve un único saldo para
+> todas: restar por junta no cuadraría nunca en cuanto exista más de una. La identidad
+> verificable es la del contrato completo, así que `verify_integrity()` no lleva `junta_id`
+> y los números por junta se leen de `junta_state`.
+>
+> El relato del QR no pierde nada, y hasta gana: _"el contrato entero cuadra — no hay un
+> centavo adentro que alguna junta no explique"_.
+
+`history` es la más importante; `verify_integrity`, `junta_state` y `cycle_coverage` alimentan el QR (§C8). **No hay `check_solvencia` acá** — la solvencia vive en el Pool (§6.7, ADR-0004).
 
 **`ciclos_totales` = `members.length`** (una junta rotativa tiene exactamente un ciclo por miembro). Es el tope de `min(…, ciclos_totales)` que congela la junta completa (ADR-0005) — definido acá para que no quede ambiguo en ningún contrato.
 
@@ -392,11 +416,24 @@ Cada componente tiene: **dueño sugerido**, **qué construir**, **qué NO constr
 - `deposit(junta_id)` — paga la cuota impaga más antigua (FIFO; requiere `approve`). **Eager (ADR-0006):** clasifica puntual/atrasado y actualiza `atraso_max_periodos = max(0, (now − vencimiento)) / periodo`. O(1).
 - `distribute(junta_id)` — **permissionless** (lo llama el dueño del turno, que cobra; ADR-0005). Entrega el pozo, avanza el turno, y **guarda el snapshot `defaults_al_cobrar`** del miembro (ADR-0007).
 - `history(junta_id, member) -> Features` — §6.2, O(1). **Deriva del reloj** `defaults`, `defaults_tras_cobro`, `antiguedad_periodos`, topados con `min(…, ciclos_totales)` (ADR-0005); calcula `tasa_cumplimiento = ciclos_transcurridos == 0 ? SCALE : clamp(cuotas_pagadas·SCALE / ciclos_transcurridos, 0, SCALE)` (comportamiento, no reloj; **la guarda evita la división por cero en junta recién creada — en Rust panica**). `defaults = max(0, min(ciclos_transcurridos, N) − cuotas_pagadas)`; `defaults_tras_cobro = max(0, defaults − defaults_al_cobrar)`.
-- `verify_integrity(junta_id)`, `cycle_coverage(junta_id)` — §6.2 (ADR-0004). **Único exit de plata: `distribute`** (penalidades reputacionales, no monetarias — mantiene la identidad de conservación).
-- `report_dispute(member)` — incrementa `disputas_perdidas`.
-- Eventos: `JuntaCreated`, `Deposited`, `Distributed`.
+- `verify_integrity()` (del contrato completo), `junta_state(junta_id)` y `cycle_coverage(junta_id)` — §6.2 (ADR-0004). **Único exit de plata: `distribute`** (penalidades reputacionales, no monetarias — es lo que mantiene la identidad de conservación).
+- `report_dispute(junta_id, member)` — incrementa `disputas_perdidas`.
+- Eventos: `JuntaCreated`, `Deposited`, `Distributed`, `DisputeReported`.
   **No construir:** multi-token, gobernanza, cancelación compleja, penalidades monetarias, estado "pausada" (ADR-0005 lo deja fuera de la semana).
   **Aceptación:** junta de 8 miembros; corrida completa con **tiempo real** (`periodo = 60s`) deja fijas sus features (**junta completa**; ADR-0005); `verify_integrity` cuadra contra `balanceOf` y salta a `cuadra=false` si se le mandan tokens sueltos; un miembro que cobra y deja de pagar muestra `defaults_tras_cobro > 0`.
+
+> **✅ IMPLEMENTADO** (commit `386f5f5`). 23 pruebas en verde; `cargo stylus check` contra
+> Arbitrum Sepolia: 28.0 KB, desplegable. Dos notas para quien lo lea después:
+>
+> - **Las llamadas al token se arman a mano**, no con `sol_interface!`. Ese macro pasa por
+>   `stylus_sdk::call::call`, que está deprecada y va directo al entorno anfitrión saltándose
+>   la abstracción de VM; ninguna llamada suya se puede interceptar desde las pruebas.
+> - **Una llamada mutante a otro contrato no es testeable en el SDK 0.9**: el contexto de
+>   escritura exige `&mut self` y el manejador de la VM exige `&self`. Las lecturas sí, porque
+>   solo necesitan préstamos inmutables. Por eso `verify_integrity` tiene cobertura (incluido
+>   el caso en que deja de cuadrar) y `deposit` se verifica contra la cadena local.
+> - La aritmética que puede estar mal vive en funciones puras (`atraso_en_periodos`,
+>   `tasa_de_cumplimiento`) y se prueba directamente. Es mejor cobertura que simular tokens.
 
 ### C3 — ScoreEngine (Rust/Stylus) · dueño: R2 (solo) — **LA JOYA, máxima prioridad**
 
@@ -450,7 +487,7 @@ Cada componente tiene: **dueño sugerido**, **qué construir**, **qué NO constr
 
 ### C8 — Página de auditoría + QR · dueño: R4
 
-**Construir:** ruta pública `/auditar/[juntaId]` que **NO requiere wallet**. Muestra: **integridad** `aportado − distribuido == balanceOf` con "CUADRA ✓ / NO CUADRA" (llama `verify_integrity`; ADR-0004), **cobertura** "Ciclo N: k de M cuotas" (`cycle_coverage`), número de miembros, y link a Arbiscan. Generar el QR que apunta a esta URL (10 copias impresas para el jurado).
+**Construir:** ruta pública `/auditar/[juntaId]` que **NO requiere wallet**. Muestra: **integridad** `aportado − distribuido == balanceOf` con "CUADRA ✓ / NO CUADRA" (llama `verify_integrity()`, **sin `junta_id`** — es del contrato completo, ver la nota del §6.2), los números **de esa junta** con `junta_state(junta_id)`, la **cobertura** "Ciclo N: k de M cuotas" (`cycle_coverage`), y un link a Arbiscan. Generar el QR que apunta a esta URL (10 copias impresas para el jurado).
 **No construir:** login, filtros, histórico gráfico, "SOLVENTE ✓" (un check que no puede fallar no prueba nada; ADR-0004).
 **Aceptación:** se escanea sin wallet y muestra la integridad en vivo; **mandar tokens sueltos a la junta hace saltar el QR a "NO CUADRA"** (el artefacto se puede mostrar fallando — la prueba máxima).
 
@@ -487,8 +524,9 @@ Crea `score_engine`. Pega el artefacto de T5 (pesos+rangos). Implementa normaliz
 **T8 · Schema EAS + attest (C4+C3) · R3+R2 · día 4**
 Registra el schema del §6.5 (**con `juntaId`**) con un script; añade `sol_interface!` de IEAS al `score_engine` y `attest()` (**recomputa en vivo**, §6.6). DoD: attestation real emitida por el contrato, visible en EAS scan / Arbiscan; `schemaUID` en `docs/addresses.md`.
 
-**T9 · Integridad + solvencia (C2 + C5) · R1 + R4 · día 4**
-`verify_integrity` y `cycle_coverage` en la **Junta** (identidad contra `balanceOf`; ADR-0004), y `liquidity_status` en el **Pool**. DoD: `verify_integrity` salta a `cuadra=false` con tokens sueltos; `liquidity_status` refleja liquidez − prestado.
+**T9 · Solvencia del Pool (C5) · R4 · día 4**
+`liquidity_status` en el **Pool**. DoD: refleja liquidez − prestado, y baja cuando un préstamo queda impago.
+_(La parte de la Junta — `verify_integrity`, `junta_state`, `cycle_coverage` — ya está hecha en T2.)_
 
 **T10 · Pool (C5) · R4+R2 · día 4**
 Crea `pool` con `deposit_liquidity`, `request_loan` (**recomputa `compute_score` en vivo**, tramos §6.7; ADR-0003), `repay`, `loan_of`, `liquidity_status`. Guarda la dirección del ScoreEngine (seteable). DoD: préstamo con score recomputado end-to-end; **caso negativo (default derivado, nadie tocó nada) revierte legible**.

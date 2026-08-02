@@ -1,0 +1,58 @@
+{
+  "features": [
+    {
+      "nombre": "tasa_cumplimiento",
+      "min": 0,
+      "max": 1000000
+    },
+    {
+      "nombre": "pagos_puntuales",
+      "min": 0,
+      "max": 12
+    },
+    {
+      "nombre": "pagos_atrasados",
+      "min": 0,
+      "max": 12
+    },
+    {
+      "nombre": "defaults",
+      "min": 0,
+      "max": 12
+    },
+    {
+      "nombre": "atraso_max_periodos",
+      "min": 0,
+      "max": 3000000
+    },
+    {
+      "nombre": "defaults_tras_cobro",
+      "min": 0,
+      "max": 12
+    },
+    {
+      "nombre": "antiguedad_periodos",
+      "min": 0,
+      "max": 12
+    },
+    {
+      "nombre": "disputas_perdidas",
+      "min": 0,
+      "max": 5
+    }
+  ],
+  "pesos": [
+    -1.643919089497572,
+    -2.6346723587280723,
+    2.233792876451285,
+    1.0816212664669234,
+    2.5337389835355957,
+    1.5225806463136842,
+    0.6807417841901338,
+    1.7485580904231126
+  ],
+  "sesgo": -1.4566726531148566,
+  "auc": 0.8710645857124732,
+  "semilla": 20260802,
+  "nota": "Los pesos aplican a features normalizadas min-max con los topes de dominio de esta misma lista. Cambiar un rango invalida los pesos."
+}
