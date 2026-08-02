@@ -1,0 +1,357 @@
+//! Pruebas de la Junta.
+//!
+//! Cada prueba corresponde a un invariante que salió de la revisión del diseño, y el
+//! comentario dice qué se rompería si desapareciera.
+//!
+//! Están divididas en dos capas a propósito. La aritmética que puede estar mal —clasificar
+//! un atraso, calcular una tasa de cumplimiento— vive en funciones puras y se prueba
+//! directamente, sin montar un contrato. Lo demás se ejerce contra el contrato real,
+//! evitando los caminos que transfieren tokens.
+//!
+//! Esa evasión tiene una razón concreta, y conviene conocerla antes de intentar
+//! "arreglarla": en el SDK 0.9 una llamada **mutante** a otro contrato no se puede
+//! interceptar desde las pruebas. El contexto de escritura exige `&mut self` y el manejador
+//! de la VM exige `&self`, y esas dos cosas no conviven, así que la ruta de escritura
+//! termina yendo directo al entorno anfitrión y esquiva el simulador. Las **lecturas** sí
+//! se pueden interceptar, porque solo necesitan préstamos inmutables — y por eso la
+//! verificación de integridad, que es lo único que este contrato publica hacia afuera, sí
+//! queda cubierta, incluido el caso en que deja de cuadrar.
+//!
+//! Los depósitos, entonces, se verifican contra la cadena local y no aquí.
+
+use super::*;
+use alloy_sol_types::SolCall;
+use stylus_sdk::testing::*;
+
+const CUOTA: u64 = 50_000_000; // 50 mUSDC, seis decimales
+const PERIODO: u64 = 60; // un ciclo por minuto, como la junta sembrada de la demo
+const INICIO: u64 = 1_000_000;
+const TOKEN: Address = Address::new([9u8; 20]);
+
+sol! {
+    function balanceOf(address account) external view returns (uint256);
+}
+
+fn miembro(n: u8) -> Address {
+    Address::from([n; 20])
+}
+
+/// Un `uint256` ABI-codificado.
+fn word(v: U256) -> Vec<u8> {
+    v.to_be_bytes::<32>().to_vec()
+}
+
+/// Una junta de `n` miembros cuyo reloj arranca en `INICIO`.
+fn junta_de(n: u8) -> (TestVM, Junta, Vec<Address>) {
+    let vm = TestVM::default();
+    vm.set_block_timestamp(INICIO);
+    let mut contrato = Junta::from(&vm);
+    contrato.constructor(TOKEN);
+
+    let miembros: Vec<Address> = (1..=n).map(miembro).collect();
+    contrato
+        .create_junta(miembros.clone(), U256::from(CUOTA), PERIODO)
+        .unwrap();
+    (vm, contrato, miembros)
+}
+
+// =====================================================================================
+// Aritmética pura — aquí vive la lógica que puede estar equivocada
+// =====================================================================================
+
+#[test]
+fn pagar_dentro_del_plazo_no_produce_atraso() {
+    assert_eq!(atraso_en_periodos(INICIO, INICIO + PERIODO, PERIODO), 0);
+}
+
+#[test]
+fn pagar_antes_del_vencimiento_no_es_atraso_negativo() {
+    // Sin la guarda, la resta daría la vuelta y el mejor pagador de la junta aparecería
+    // con el peor atraso registrado.
+    assert_eq!(
+        atraso_en_periodos(INICIO, INICIO + 10 * PERIODO, PERIODO),
+        0
+    );
+}
+
+#[test]
+fn medio_ciclo_tarde_son_medio_periodo_y_no_cero() {
+    // Redondeando a enteros, quien paga a mitad de ciclo se vería idéntico a un puntual y
+    // la señal de atraso perdería casi todo su contenido.
+    let vencimiento = INICIO + PERIODO;
+    assert_eq!(
+        atraso_en_periodos(vencimiento + PERIODO / 2, vencimiento, PERIODO),
+        SCALE as u128 / 2
+    );
+}
+
+#[test]
+fn dos_ciclos_tarde_son_dos_periodos() {
+    let vencimiento = INICIO + PERIODO;
+    assert_eq!(
+        atraso_en_periodos(vencimiento + 2 * PERIODO, vencimiento, PERIODO),
+        2 * SCALE as u128
+    );
+}
+
+#[test]
+fn un_periodo_de_cero_no_hace_estallar_la_medicion() {
+    assert_eq!(atraso_en_periodos(INICIO + 100, INICIO, 0), 0);
+}
+
+#[test]
+fn sin_ciclos_vencidos_el_cumplimiento_es_total() {
+    // Este es el estado exacto en que la siembra toca el contrato: la junta acaba de nacer
+    // y no ha vencido ningún ciclo. Una división entera por cero aborta la ejecución en
+    // Rust, así que la rama especial no es cosmética: es lo que evita que la demo muera en
+    // su primer segundo.
+    assert_eq!(tasa_de_cumplimiento(0, 0), SCALE);
+    assert_eq!(tasa_de_cumplimiento(3, 0), SCALE);
+}
+
+#[test]
+fn la_tasa_es_la_fraccion_de_lo_que_le_tocaba_pagar() {
+    assert_eq!(tasa_de_cumplimiento(1, 2), SCALE / 2);
+    assert_eq!(tasa_de_cumplimiento(3, 4), SCALE * 3 / 4);
+    assert_eq!(tasa_de_cumplimiento(8, 8), SCALE);
+    assert_eq!(tasa_de_cumplimiento(0, 5), 0);
+}
+
+#[test]
+fn pagar_por_adelantado_no_da_mas_de_cumplimiento_total() {
+    // Quien paga la cuota del ciclo en curso tiene más cuotas pagadas que ciclos vencidos.
+    // Sin el tope, su cumplimiento pasaría del 100% y empujaría el score fuera del rango
+    // con el que se entrenó el modelo.
+    assert_eq!(tasa_de_cumplimiento(5, 3), SCALE);
+}
+
+// =====================================================================================
+// Lo negativo aparece solo, con el reloj
+// =====================================================================================
+
+#[test]
+fn junta_recien_creada_no_acumula_nada() {
+    let (_vm, c, m) = junta_de(8);
+    let (tasa, _, _, defaults, _, tras_cobro, antiguedad, _) = c.history(0, m[0]);
+
+    assert_eq!(tasa, I128::try_from(SCALE).unwrap());
+    assert_eq!(defaults, 0);
+    assert_eq!(tras_cobro, 0);
+    assert_eq!(antiguedad, 0);
+}
+
+#[test]
+fn el_incumplimiento_aparece_sin_que_nadie_firme_nada() {
+    // El corazón del diseño: entre la primera lectura y la segunda no se ejecuta ninguna
+    // transacción. Solo pasa el tiempo, y el crédito se cierra solo.
+    let (vm, c, m) = junta_de(8);
+
+    let (_, _, _, antes, _, _, _, _) = c.history(0, m[0]);
+    assert_eq!(antes, 0);
+
+    vm.set_block_timestamp(INICIO + 3 * PERIODO);
+
+    let (tasa, _, _, despues, _, _, antiguedad, _) = c.history(0, m[0]);
+    assert_eq!(
+        despues, 3,
+        "tres ciclos vencidos sin pagar son tres incumplimientos"
+    );
+    assert_eq!(antiguedad, 3);
+    assert_eq!(tasa, I128::ZERO, "no pagó nada de lo que le tocaba");
+}
+
+#[test]
+fn una_junta_completa_congela_su_historial() {
+    // Sin el tope, la junta que se siembra el jueves llegaría al sábado con miles de
+    // incumplimientos y un score basura. El tope es lo que la hace sembrable.
+    let (vm, c, m) = junta_de(8);
+
+    vm.set_block_timestamp(INICIO + 8 * PERIODO);
+    let (_, _, _, al_terminar, _, _, antiguedad, _) = c.history(0, m[0]);
+
+    vm.set_block_timestamp(INICIO + 10_000 * PERIODO);
+    let (_, _, _, mucho_despues, _, _, antiguedad_despues, _) = c.history(0, m[0]);
+
+    assert_eq!(al_terminar, 8);
+    assert_eq!(mucho_despues, 8, "una junta terminada ya no acumula nada");
+    assert_eq!(antiguedad, 8);
+    assert_eq!(antiguedad_despues, 8);
+}
+
+// =====================================================================================
+// La mora post-cobro distingue al pagador lento del que ya se llevó el pozo
+// =====================================================================================
+
+#[test]
+fn quien_no_ha_cobrado_no_tiene_mora_post_cobro() {
+    // Un pagador lento que todavía no tocó el pozo no representa el mismo riesgo que
+    // alguien que ya cobró y dejó de aportar, aunque ambos deban exactamente lo mismo.
+    let (vm, c, m) = junta_de(8);
+    vm.set_block_timestamp(INICIO + 3 * PERIODO);
+
+    let (_, _, _, defaults, _, tras_cobro, _, _) = c.history(0, m[5]);
+    assert_eq!(defaults, 3);
+    assert_eq!(
+        tras_cobro, 0,
+        "todavía no cobró: no puede tener mora posterior"
+    );
+}
+
+#[test]
+fn cobrar_el_turno_y_seguir_sin_pagar_si_genera_mora_post_cobro() {
+    // Nadie aportó, así que el pozo va vacío y no se mueve un solo token: lo que se prueba
+    // aquí es la fotografía de la mora en el instante del cobro, que es lo único que
+    // separa los incumplimientos de antes de los de después.
+    let (vm, mut c, m) = junta_de(4);
+
+    vm.set_block_timestamp(INICIO + PERIODO + 1);
+    let monto = c.distribute(0).unwrap();
+    assert_eq!(monto, U256::ZERO, "no había nada que repartir");
+
+    // En ese instante ya debía una cuota; a partir de ahí acumula dos más.
+    vm.set_block_timestamp(INICIO + 3 * PERIODO);
+    let (_, _, _, defaults, _, tras_cobro, _, _) = c.history(0, m[0]);
+    assert_eq!(defaults, 3);
+    assert_eq!(
+        tras_cobro, 2,
+        "solo cuentan los incumplimientos posteriores al cobro"
+    );
+}
+
+#[test]
+fn el_turno_avanza_al_repartir() {
+    let (vm, mut c, _m) = junta_de(4);
+    let (_, _, turno_inicial, _, _, _) = c.junta_state(0);
+    assert_eq!(turno_inicial, 0);
+
+    vm.set_block_timestamp(INICIO + PERIODO + 1);
+    c.distribute(0).unwrap();
+
+    let (_, _, turno, _, _, _) = c.junta_state(0);
+    assert_eq!(turno, 1);
+}
+
+#[test]
+fn no_se_puede_vaciar_la_caja_antes_de_que_venza_el_ciclo() {
+    let (vm, mut c, _m) = junta_de(4);
+    vm.set_block_timestamp(INICIO + PERIODO / 2);
+    assert!(c.distribute(0).is_err());
+}
+
+#[test]
+fn una_junta_terminada_ya_no_reparte() {
+    let (vm, mut c, _m) = junta_de(2);
+    vm.set_block_timestamp(INICIO + 10 * PERIODO);
+    c.distribute(0).unwrap();
+    c.distribute(0).unwrap();
+    assert!(
+        c.distribute(0).is_err(),
+        "ya cobraron los dos miembros: no hay tercer turno"
+    );
+}
+
+// =====================================================================================
+// La identidad que cualquiera puede verificar sin permiso
+// =====================================================================================
+
+#[test]
+fn la_contabilidad_cuadra_contra_el_saldo_real_del_token() {
+    let (vm, c, _m) = junta_de(4);
+    let contrato = vm.contract_address();
+
+    vm.mock_static_call(
+        TOKEN,
+        balanceOfCall { account: contrato }.abi_encode(),
+        Ok(word(U256::ZERO)),
+    );
+
+    let (aportado, distribuido, saldo, cuadra) = c.verify_integrity().unwrap();
+    assert_eq!(aportado, U256::ZERO);
+    assert_eq!(distribuido, U256::ZERO);
+    assert_eq!(saldo, U256::ZERO);
+    assert!(cuadra);
+}
+
+#[test]
+fn mandar_tokens_sueltos_al_contrato_rompe_la_identidad() {
+    // Este es el caso que vuelve útil la verificación: si no pudiera dar falso, no
+    // probaría nada. Es también el momento de la demo en que el QR se pone en rojo.
+    let (vm, c, _m) = junta_de(4);
+    let contrato = vm.contract_address();
+
+    vm.mock_static_call(
+        TOKEN,
+        balanceOfCall { account: contrato }.abi_encode(),
+        Ok(word(U256::from(100))),
+    );
+
+    let (aportado, distribuido, saldo, cuadra) = c.verify_integrity().unwrap();
+    assert_eq!(aportado - distribuido, U256::ZERO);
+    assert_eq!(saldo, U256::from(100));
+    assert!(!cuadra, "hay saldo que la contabilidad no explica");
+}
+
+// =====================================================================================
+// Guardas de acceso y parámetros
+// =====================================================================================
+
+#[test]
+fn alguien_de_afuera_no_puede_depositar_en_una_junta_ajena() {
+    let (vm, mut c, _m) = junta_de(4);
+    vm.set_sender(miembro(200));
+    assert!(c.deposit(0).is_err());
+}
+
+#[test]
+fn no_se_puede_operar_sobre_una_junta_que_no_existe() {
+    let (vm, mut c, _m) = junta_de(4);
+    vm.set_sender(miembro(1));
+    assert!(c.deposit(7).is_err());
+    assert!(c.distribute(7).is_err());
+}
+
+#[test]
+fn una_junta_necesita_miembros_cuota_y_periodo() {
+    let vm = TestVM::default();
+    let mut c = Junta::from(&vm);
+    c.constructor(TOKEN);
+
+    assert!(c
+        .create_junta(alloc::vec![], U256::from(CUOTA), PERIODO)
+        .is_err());
+    assert!(c
+        .create_junta(alloc::vec![miembro(1)], U256::ZERO, PERIODO)
+        .is_err());
+    assert!(c
+        .create_junta(alloc::vec![miembro(1)], U256::from(CUOTA), 0)
+        .is_err());
+}
+
+#[test]
+fn las_disputas_se_acumulan_por_miembro() {
+    let (_vm, mut c, m) = junta_de(4);
+    c.report_dispute(0, m[2]).unwrap();
+    c.report_dispute(0, m[2]).unwrap();
+
+    let (_, _, _, _, _, _, _, disputas) = c.history(0, m[2]);
+    assert_eq!(disputas, 2);
+    let (_, _, _, _, _, _, _, otro) = c.history(0, m[1]);
+    assert_eq!(otro, 0, "la disputa es de quien la perdió, no de la junta");
+}
+
+#[test]
+fn cada_junta_lleva_su_propia_cuenta() {
+    // El contrato alberga muchas juntas y el historial es del par (junta, miembro), así
+    // que lo que pasa en una no puede contaminar a la otra.
+    let (vm, mut c, m) = junta_de(4);
+    c.create_junta(m.clone(), U256::from(CUOTA), PERIODO * 10)
+        .unwrap();
+
+    vm.set_block_timestamp(INICIO + 3 * PERIODO);
+
+    let (_, _, _, en_la_rapida, _, _, _, _) = c.history(0, m[0]);
+    let (_, _, _, en_la_lenta, _, _, _, _) = c.history(1, m[0]);
+
+    assert_eq!(en_la_rapida, 3);
+    assert_eq!(en_la_lenta, 0, "sus ciclos duran diez veces más");
+}
