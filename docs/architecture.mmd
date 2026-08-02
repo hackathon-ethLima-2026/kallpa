@@ -1,0 +1,29 @@
+%%{init: {'theme':'base','themeVariables':{'fontFamily':'Arial','primaryColor':'#121A26','primaryBorderColor':'#223046','primaryTextColor':'#F4F2EC','lineColor':'#8A94A6','clusterBkg':'#0B0F16','clusterBorder':'#223046','edgeLabelBackground':'#0B0F16','tertiaryColor':'#0B0F16','tertiaryTextColor':'#F4F2EC'}}}%%
+flowchart TB
+  M["<b>Miembros</b> · María<br/>ahorristas de la junta"]:::actor
+
+  subgraph CHAIN["Arbitrum Sepolia · Stylus (Rust)"]
+    direction TB
+    J["<b>Junta</b><br/>custodia el pozo · contadores O(1)<br/>integridad: aportado − distribuido == balanceOf<br/>defaults derivados del reloj"]:::core
+    SE["<b>ScoreEngine</b> — la joya<br/>compute_score (view)<br/>record_score (tx → LatestScore · el WOW)<br/>attest (tx)"]:::jewel
+    P["<b>Pool de microcrédito</b><br/>request_loan recomputa en vivo<br/>liquidity_status"]:::core
+  end
+
+  EAS["<b>EAS attestation</b><br/>score · positive · juntaId<br/>portable — viaja"]:::arb
+  QR["<b>/auditar</b> · QR sin wallet<br/>verify_integrity · cycle_coverage"]:::audit
+  FUT["<b>Fintechs · coops · seguros</b><br/>consumen el mismo estándar (futuro)"]:::future
+
+  M -->|"cuotas mUSDC"| J
+  J -->|"history() en vivo"| SE
+  P -->|"recomputa: compute_score()"| SE
+  SE -->|"attest()"| EAS
+  P -->|"presta mUSDC"| M
+  J -.->|"integridad + cobertura"| QR
+  EAS -.->|"mismo estándar"| FUT
+
+  classDef actor fill:#121A26,stroke:#8A94A6,color:#F4F2EC
+  classDef core fill:#121A26,stroke:#223046,color:#F4F2EC
+  classDef jewel fill:#1B1605,stroke:#F0B429,color:#F4F2EC,stroke-width:2px
+  classDef arb fill:#06182A,stroke:#12AAFF,color:#F4F2EC
+  classDef audit fill:#121A26,stroke:#F0B429,color:#F4F2EC
+  classDef future fill:#0B0F16,stroke:#223046,color:#8A94A6
