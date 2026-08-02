@@ -205,32 +205,36 @@ kallpa/
 
 ## 5. Setup inicial (paso a paso — día 1)
 
-**Uno del equipo** hace esto una vez y agrega a los otros 3 como collaborators en GitHub:
+> **Esta parte ya está hecha.** El repo público existe con la base de Scaffold-Stylus,
+> la documentación y el contrato `mock_usdc`:
+> **https://github.com/hackathon-ethLima-2026/kallpa**
+>
+> El primer commit es posterior al kickoff, como exige el reglamento. Lo que sigue pendiente
+> es agregar a los otros tres como collaborators, y que cada uno haga su setup.
+
+**Cada uno en su máquina:**
 
 ```bash
-# 1. Clonar Scaffold-Stylus como base del repo
-git clone https://github.com/Arb-Stylus/scaffold-stylus.git kallpa
+# 1. Clonar el repo del equipo
+git clone https://github.com/hackathon-ethLima-2026/kallpa.git
 cd kallpa
 
-# 2. Reapuntar el remoto a NUESTRO repo público nuevo (creado en GitHub)
-git remote remove origin
-git remote add origin https://github.com/<org-o-usuario>/kallpa.git
-
-# 3. Instalar dependencias y submódulos
+# 2. Instalar dependencias
 yarn install
-git submodule update --init --recursive
+# (no hay submódulos que inicializar: nitro-devnode vive dentro del repo)
 
-# 4. Levantar la chain local y el front (en dos terminales) para verificar que TODO corre
+# 3. Instalar la toolchain de Stylus — ver §3.
+#    En Windows es OBLIGATORIO este script, o cargo-stylus no compila:
+bash scripts/install-cargo-stylus-windows.sh
+
+# 4. Verificar que todo corre
+yarn stylus:test    # los tests de los contratos deben pasar en verde
 yarn chain          # terminal 1: devnode local (Docker)
-yarn deploy         # terminal 2: despliega los contratos de ejemplo en local
+yarn deploy         # terminal 2: despliega en la cadena local
 yarn start          # terminal 3: front en http://localhost:3000 (Debug Contracts)
-
-# 5. Primer commit (POSTERIOR al kickoff): estructura + README con el pitch
-git add . && git commit -m "chore: base Scaffold-Stylus + estructura Kallpa"
-git push -u origin main
 ```
 
-**Los 4** (cada uno en su máquina): instalar la toolchain de §3, crear una wallet de prueba, y pedir ETH de prueba de Arbitrum Sepolia en un faucet.
+**Además, cada uno:** crear una wallet **de prueba** (nunca una con fondos reales) y pedir ETH de prueba de Arbitrum Sepolia en un faucet.
 
 **Config de red — Arbitrum Sepolia (LOCKED):**
 
