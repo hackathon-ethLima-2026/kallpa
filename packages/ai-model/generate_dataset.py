@@ -84,10 +84,17 @@ def simular_miembro(rng):
             puntuales += 1
             pagadas += 1
         elif sorteo < efectiva + (1 - efectiva) * 0.45:
-            # Paga, pero tarde. Cuanto menos fiable, más se demora.
+            # Paga, pero tarde. El retraso depende sobre todo de circunstancias —quedarse
+            # sin efectivo una semana— y solo un poco de la fiabilidad de la persona.
+            #
+            # Que dependa poco es deliberado y corrige un error anterior: cuando la
+            # magnitud del atraso era casi una función directa de la fiabilidad, se volvía
+            # la señal más limpia de todo el conjunto y el modelo aprendía a castigar el
+            # atraso más que el incumplimiento. El resultado era absurdo: quien pagaba todo
+            # con retraso puntuaba peor que quien no pagaba nada.
             atrasados += 1
             pagadas += 1
-            atraso = rng.uniform(0.05, 3.0) * (1.2 - fiabilidad)
+            atraso = rng.uniform(0.05, 3.0) * (0.85 + 0.3 * (1 - fiabilidad))
             peor_atraso = max(peor_atraso, min(atraso, 3.0))
         # else: no paga en ese ciclo, y queda como cuota vencida
 
@@ -117,8 +124,24 @@ def simular_miembro(rng):
     # midió aparte: con estos valores, un oráculo que conociera la fiabilidad latente
     # alcanza un AUC de 0.91, así que el margen entre lo que logra el modelo y ese número
     # dice cuánta señal pierden las ocho columnas por el camino.
-    riesgo = 13.0 * (1 - fiabilidad) + 6.0 * caida_tras_cobro + 0.35 * disputas
-    p_incumplir = 1 / (1 + math.exp(-(riesgo - 8.4)))
+    # Lo que más pesa es lo que la persona *hizo*: la fracción de sus cuotas que dejó sin
+    # pagar. Después, haber seguido sin pagar tras cobrar el pozo. El atraso pesa poco —
+    # pagar tarde es un problema de liquidez, no de voluntad— y la fiabilidad latente
+    # aporta el ruido que ninguna columna alcanza a explicar.
+    #
+    # Este orden importa tanto como los números. Un modelo entrenado sobre un mundo donde
+    # el atraso pesa más que el incumplimiento produce un ranking que nadie puede defender
+    # en voz alta, por muy bueno que sea su AUC.
+    sin_pagar = 0.0 if ciclos == 0 else defaults / ciclos
+    frac_tras_cobro = 0.0 if ciclos == 0 else defaults_tras_cobro / ciclos
+    riesgo = (
+        7.5 * sin_pagar
+        + 4.0 * frac_tras_cobro
+        + 0.9 * (peor_atraso / 3.0)
+        + 0.45 * disputas
+        + 4.0 * (1 - fiabilidad)
+    )
+    p_incumplir = 1 / (1 + math.exp(-(riesgo - 7.2)))
     incumplio = 1 if rng.random() < p_incumplir else 0
 
     features = [

@@ -1,6 +1,6 @@
 # Decisiones de arquitectura (ADR)
 
-Diez decisiones salidas de la revisión del build spec. Cada una registra **por qué** se decidió algo; el **qué** vive en el §6 del build spec. Si el §6 y un ADR se contradicen, gana el §6 — pero el ADR explica qué se rompe al cambiarlo.
+Once decisiones salidas de la revisión del build spec. Cada una registra **por qué** se decidió algo; el **qué** vive en el §6 del build spec. Si el §6 y un ADR se contradicen, gana el §6 — pero el ADR explica qué se rompe al cambiarlo.
 
 | #                                                                   | Decisión                                 | En una línea                                                                                                               |
 | ------------------------------------------------------------------- | ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
@@ -14,5 +14,7 @@ Diez decisiones salidas de la revisión del build spec. Cada una registra **por 
 | [0008](./0008-estructura-de-equipo-y-camino-critico.md)             | Equipo y camino crítico                  | Todo en Stylus; el motor se construye en pareja; el modelo entrega stub antes que pesos.                                   |
 | [0009](./0009-tasa-de-cumplimiento-en-vez-de-ciclos-completados.md) | Tasa de cumplimiento                     | La feature 0 pasa de conteo a cociente; guarda obligatoria de división por cero.                                           |
 | [0010](./0010-umbral-unico-de-reputacion.md)                        | Umbral único de reputación               | `positive = score >= 400`, la misma frontera que el primer tramo del Pool.                                                 |
+
+| [0011](./0011-historial-minimo-para-el-credito.md) | Historial mínimo para el crédito | Sin tres ciclos no hay préstamo: el modelo no sabe decir "no sé" y da 989 a un desconocido. |
 
 El vocabulario del dominio está en [`CONTEXT.md`](../../CONTEXT.md) en la raíz.
