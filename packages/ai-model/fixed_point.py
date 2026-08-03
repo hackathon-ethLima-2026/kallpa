@@ -16,26 +16,10 @@ parece en nada a su causa. Por eso todas las divisiones de este archivo pasan po
 
 SCALE = 1_000_000
 
-# Sigmoide muestreada cada medio punto entre -6 y 6, en punto fijo.
+# Rango de log-odds sobre el que se reparte la escala del score.
 #
-# Se aproxima por tramos rectos en vez de calcularla de verdad porque una exponencial no
-# existe en aritmética entera, y aproximarla dentro del contrato costaría gas y precisión.
-#
-# El paso es de medio punto y no de uno entero por una razón medible: interpolando en
-# intervalos de una unidad, el score en cadena llegaba a apartarse doce puntos del modelo
-# entrenado, justo en la zona donde la curva más se dobla. Al partir el paso a la mitad ese
-# error cae a un tercio, y el precio son doce constantes más y ninguna diferencia de gas
-# apreciable. Importa porque la afirmación del proyecto es que el score es reproducible: un
-# desvío de doce puntos sobre mil es un flanco innecesario.
-#
-# Fuera del intervalo la sigmoide ya está a menos de tres milésimas de sus extremos, así que
-# satura sin pérdida apreciable.
-SIGMOIDE = [
-    2473, 4070, 6693, 10987, 17986, 29312, 47426, 75858, 119203, 182426, 268941,
-    377541, 500000, 622459, 731059, 817574, 880797, 924142, 952574, 970688, 982014,
-    989013, 993307, 995930, 997527,
-]
-PASO = SCALE // 2  # separación entre dos puntos consecutivos de la tabla
+# Fuera de estos límites el modelo ya está tan seguro que la diferencia deja de importar
+# para decidir un crédito, así que el score satura.
 Z_MIN = -6
 Z_MAX = 6
 
@@ -66,19 +50,25 @@ def normalizar(valor, minimo, maximo):
     return max(0, min(SCALE, x))
 
 
-def sigmoide(z):
-    """Sigmoide por tramos rectos. `z` y el resultado están en punto fijo."""
-    if z <= Z_MIN * SCALE:
-        return SIGMOIDE[0]
-    if z >= Z_MAX * SCALE:
-        return SIGMOIDE[-1]
+def puntuar(z):
+    """Convierte log-odds en un score de 0 a 1000.
 
-    desplazado = z - Z_MIN * SCALE  # siempre >= 0, así que no hay ambigüedad de signo
-    indice = desplazado // PASO
-    fraccion = desplazado - indice * PASO
-    izquierda = SIGMOIDE[indice]
-    derecha = SIGMOIDE[indice + 1]
-    return izquierda + div_rust((derecha - izquierda) * fraccion, PASO)
+    La relación es lineal: cada unidad de log-odds vale siempre la misma cantidad de
+    puntos. Es la convención de las tarjetas de puntaje crediticio de toda la vida, y se
+    eligió sobre el complemento de la probabilidad por una razón medible.
+
+    Con el complemento de la probabilidad, el 85% de la población caía en el tramo superior
+    y los tramos intermedios quedaban vacíos: el score estaba bien calibrado como
+    estimación de riesgo, pero como instrumento de crédito era prácticamente binario. En
+    escala de log-odds ese mismo conjunto se reparte con una mediana de 804 y un tercio de
+    la gente en los tramos del medio.
+
+    Además elimina la sigmoide del cálculo, que era la única aproximación que quedaba: aquí
+    no hay curva que muestrear, así que tampoco hay error que acotar.
+    """
+    ancho = (Z_MAX - Z_MIN) * SCALE
+    score = div_rust((Z_MAX * SCALE - z) * 1000, ancho)
+    return max(0, min(1000, score))
 
 
 def calcular_score(features, pesos, minimos, maximos, sesgo):
@@ -93,5 +83,4 @@ def calcular_score(features, pesos, minimos, maximos, sesgo):
         acumulado += peso * normalizar(valor, lo, hi)
 
     z = div_rust(acumulado, SCALE) + sesgo
-    p_incumplir = sigmoide(z)
-    return div_rust((SCALE - p_incumplir) * 1000, SCALE)
+    return puntuar(z)

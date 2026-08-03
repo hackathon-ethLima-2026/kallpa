@@ -6,14 +6,14 @@
 // score equivocado sin ningún síntoma visible.
 //
 // AUC: 0.927   ·   semilla del dataset: 20260802
-// Pérdida por cuantización: máx 3 pts, media 0.74 pts
+// Pérdida por cuantización: máx 1 pts, media 0.00 pts
 
 /// Escala del punto fijo: un valor real `v` se representa como `v * 1000000`.
 pub const SCALE: i128 = 1000000;
 
 /// Huella del modelo. Viaja en cada attestation para que se pueda saber con qué
 /// modelo exacto se calculó un score.
-pub const MODEL_HASH: &str = "0x9c5704ad6735dd51910a796359570773f27b8d67895fb93fa3c7233a4092ad9e";
+pub const MODEL_HASH: &str = "0x9664441e2342982ac11dab05b4ac95752f480eda32150983805e014fbc92b0c1";
 
 /// Peso de cada señal, en el orden del §6.1.
 pub const PESOS: [i128; 8] = [
@@ -38,12 +38,8 @@ pub const MINIMOS: [i128; 8] = [0, 0, 0, 0, 0, 0, 0, 0];
 /// normalización y con ella el significado de los pesos.
 pub const MAXIMOS: [i128; 8] = [1000000, 12, 12, 12, 3000000, 12, 12, 5];
 
-/// Sigmoide muestreada cada medio punto entre -6 y 6, en punto fijo. Entre esos
-/// puntos se interpola en línea recta; fuera del intervalo satura. El paso es de
-/// medio punto porque con paso entero el score se apartaba hasta doce puntos del
-/// modelo entrenado en la zona de mayor curvatura.
-pub const SIGMOIDE: [i128; 25] = [2473, 4070, 6693, 10987, 17986, 29312, 47426, 75858, 119203, 182426, 268941, 377541, 500000, 622459, 731059, 817574, 880797, 924142, 952574, 970688, 982014, 989013, 993307, 995930, 997527];
-/// Separación entre dos puntos consecutivos de la tabla.
-pub const PASO: i128 = 500000;
+/// Rango de log-odds sobre el que se reparte la escala del score. Fuera de
+/// estos límites el modelo ya está tan seguro que la diferencia deja de
+/// importar para decidir un crédito, así que el score satura.
 pub const Z_MIN: i128 = -6;
 pub const Z_MAX: i128 = 6;

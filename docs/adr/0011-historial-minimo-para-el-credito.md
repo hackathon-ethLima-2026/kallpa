@@ -13,7 +13,7 @@ mucho que el modelo puntúe alto.
 El modelo estima la probabilidad de incumplir a partir de ocho señales de comportamiento.
 Cuando no hay comportamiento que observar, todas esas señales valen cero o su valor neutro
 —incluida la tasa de cumplimiento, que por convención vale el máximo cuando todavía no venció
-ningún ciclo (ADR-0009)— y el resultado es un score altísimo: **989 sobre 1000 para alguien
+ningún ciclo (ADR-0009)— y el resultado es un score altísimo: **878 sobre 1000 para alguien
 que acaba de entrar a una junta**. Con los tramos vigentes, eso significa prestarle el monto
 máximo a un completo desconocido.
 

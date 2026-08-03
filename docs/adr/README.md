@@ -1,6 +1,6 @@
 # Decisiones de arquitectura (ADR)
 
-Once decisiones salidas de la revisión del build spec. Cada una registra **por qué** se decidió algo; el **qué** vive en el §6 del build spec. Si el §6 y un ADR se contradicen, gana el §6 — pero el ADR explica qué se rompe al cambiarlo.
+Doce decisiones salidas de la revisión del build spec. Cada una registra **por qué** se decidió algo; el **qué** vive en el §6 del build spec. Si el §6 y un ADR se contradicen, gana el §6 — pero el ADR explica qué se rompe al cambiarlo.
 
 | #                                                                   | Decisión                                 | En una línea                                                                                                               |
 | ------------------------------------------------------------------- | ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
@@ -16,5 +16,7 @@ Once decisiones salidas de la revisión del build spec. Cada una registra **por 
 | [0010](./0010-umbral-unico-de-reputacion.md)                        | Umbral único de reputación               | `positive = score >= 400`, la misma frontera que el primer tramo del Pool.                                                 |
 
 | [0011](./0011-historial-minimo-para-el-credito.md) | Historial mínimo para el crédito | Sin tres ciclos no hay préstamo: el modelo no sabe decir "no sé" y da 989 a un desconocido. |
+
+| [0012](./0012-escala-de-scorecard-en-log-odds.md) | Escala de scorecard | El score es lineal en log-odds: la escala vieja metía al 85% en un solo tramo. |
 
 El vocabulario del dominio está en [`CONTEXT.md`](../../CONTEXT.md) en la raíz.

@@ -50,7 +50,7 @@ use stylus_sdk::{
 };
 
 mod weights;
-use weights::{MAXIMOS, MINIMOS, PASO, PESOS, SCALE, SESGO, SIGMOIDE, Z_MAX, Z_MIN};
+use weights::{MAXIMOS, MINIMOS, PESOS, SCALE, SESGO, Z_MAX, Z_MIN};
 
 /// Score a partir del cual la reputación es positiva.
 ///
@@ -61,7 +61,7 @@ const UMBRAL_POSITIVO: u16 = 400;
 
 /// Ciclos vencidos que un miembro necesita antes de poder recibir crédito.
 ///
-/// Sin esta regla, quien acaba de entrar a una junta puntúa **989 sobre 1000**: no hay
+/// Sin esta regla, quien acaba de entrar a una junta puntúa **878 sobre 1000**: no hay
 /// ninguna señal negativa que observar, así que el modelo no encuentra motivos para
 /// desconfiar. El modelo no se equivoca —literalmente no hay evidencia en contra—, el error
 /// sería tratar "no sé" como "excelente" y prestarle el monto máximo a un desconocido.
@@ -131,32 +131,36 @@ fn normalizar(valor: i128, minimo: i128, maximo: i128) -> i128 {
     }
 }
 
-/// Sigmoide aproximada por tramos rectos, en punto fijo.
+/// Convierte log-odds en un score de 0 a 1000.
 ///
-/// Una exponencial no existe en aritmética entera, así que la curva se muestrea cada medio
-/// punto y se interpola recto entre muestras. Fuera de `[-6, 6]` ya está a menos de tres
-/// milésimas de sus extremos, así que satura sin pérdida apreciable.
-fn sigmoide(z: i128) -> i128 {
-    if z <= Z_MIN * SCALE {
-        return SIGMOIDE[0];
+/// La relación es lineal: cada unidad de log-odds vale siempre la misma cantidad de puntos.
+/// Es la convención de las tarjetas de puntaje crediticio de toda la vida, y se eligió sobre
+/// el complemento de la probabilidad por una razón medible.
+///
+/// Con el complemento de la probabilidad, el 85% de la población caía en el tramo superior de
+/// crédito y los tramos intermedios quedaban vacíos: el score estaba bien calibrado como
+/// estimación de riesgo, pero como instrumento de crédito era prácticamente binario, o el
+/// monto máximo o nada. En escala de log-odds ese mismo conjunto se reparte con una mediana
+/// de 804 y un tercio de la gente en los tramos del medio.
+///
+/// Como efecto secundario desaparece la sigmoide, que era la única aproximación del cálculo:
+/// aquí no hay curva que muestrear, así que tampoco hay error que acotar.
+fn puntuar(z: i128) -> u16 {
+    let ancho = (Z_MAX - Z_MIN) * SCALE;
+    let score = div_trunc((Z_MAX * SCALE - z) * 1000, ancho);
+    if score < 0 {
+        0
+    } else if score > 1000 {
+        1000
+    } else {
+        score as u16
     }
-    if z >= Z_MAX * SCALE {
-        return SIGMOIDE[SIGMOIDE.len() - 1];
-    }
-
-    // Siempre no negativo, así que no hay ambigüedad de signo en la división.
-    let desplazado = z - Z_MIN * SCALE;
-    let indice = (desplazado / PASO) as usize;
-    let fraccion = desplazado - (indice as i128) * PASO;
-    let izquierda = SIGMOIDE[indice];
-    let derecha = SIGMOIDE[indice + 1];
-    izquierda + div_trunc((derecha - izquierda) * fraccion, PASO)
 }
 
 /// El modelo completo: de ocho señales crudas a un score de 0 a 1000.
 ///
-/// Un score alto significa buen comportamiento. El modelo estima la probabilidad de
-/// incumplir, así que el score es su complemento.
+/// Un score alto significa buen comportamiento: el modelo estima el riesgo de incumplir y
+/// la escala lo invierte.
 pub fn calcular_score(features: [i128; 8]) -> u16 {
     let mut acumulado: i128 = 0;
     let mut i = 0;
@@ -166,16 +170,7 @@ pub fn calcular_score(features: [i128; 8]) -> u16 {
     }
 
     let z = div_trunc(acumulado, SCALE) + SESGO;
-    let p_incumplir = sigmoide(z);
-    let score = div_trunc((SCALE - p_incumplir) * 1000, SCALE);
-
-    if score < 0 {
-        0
-    } else if score > 1000 {
-        1000
-    } else {
-        score as u16
-    }
+    puntuar(z)
 }
 
 /// Interpreta 32 bytes en complemento a dos como un entero con signo.
@@ -283,6 +278,19 @@ impl ScoreEngine {
         Ok(self.score_de(junta_id, member)?.0)
     }
 
+    /// El score y la elegibilidad de un tirón: `(score, con_credito)`.
+    ///
+    /// Existe para que el Pool resuelva un préstamo con una sola llamada. Consultando ambas
+    /// cosas por separado, cada préstamo leería el historial de la Junta dos veces y las dos
+    /// respuestas podrían venir de instantes distintos.
+    pub fn score_and_credit(
+        &self,
+        junta_id: u32,
+        member: Address,
+    ) -> Result<(u16, bool), ScoreError> {
+        self.score_de(junta_id, member)
+    }
+
     /// Si el miembro puede recibir crédito en este momento.
     ///
     /// Son dos condiciones y no una: que el score alcance el umbral, y que haya suficiente
@@ -301,9 +309,13 @@ impl ScoreEngine {
         let ahora = self.vm().block_timestamp();
 
         let id = U32::from(junta_id);
-        self.ultimo_score.setter(id).insert(member, U16::from(score));
+        self.ultimo_score
+            .setter(id)
+            .insert(member, U16::from(score));
         self.ultimo_positivo.setter(id).insert(member, positivo);
-        self.ultimo_momento.setter(id).insert(member, U64::from(ahora));
+        self.ultimo_momento
+            .setter(id)
+            .insert(member, U64::from(ahora));
 
         log(
             self.vm(),

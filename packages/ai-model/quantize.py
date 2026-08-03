@@ -18,7 +18,7 @@ from pathlib import Path
 from eth_hash.auto import keccak
 
 from features import MAXIMOS, MINIMOS, NOMBRES
-from fixed_point import PASO, SCALE, SIGMOIDE, calcular_score
+from fixed_point import SCALE, Z_MAX, Z_MIN, calcular_score
 
 AQUI = Path(__file__).parent
 PESOS_JSON = AQUI / "weights.json"
@@ -32,15 +32,19 @@ def cuantizar(valor):
 
 
 def score_en_flotante(features, pesos, sesgo):
-    """El score tal como lo daría el modelo original, sin cuantizar."""
-    import math
+    """El score tal como lo daría el modelo original, sin cuantizar.
 
+    Usa la misma escala de log-odds que el contrato, así que la diferencia entre ambos mide
+    únicamente lo que se pierde al pasar los pesos a enteros — que es justo lo que interesa
+    saber antes de que ese error aparezca en la cadena.
+    """
     z = sesgo
     for valor, peso, lo, hi in zip(features, pesos, MINIMOS, MAXIMOS):
         x = 0.0 if hi <= lo else (valor - lo) / (hi - lo)
         z += peso * min(1.0, max(0.0, x))
-    p = 1 / (1 + math.exp(-max(-6.0, min(6.0, z))))
-    return int((1 - p) * 1000)
+    ancho = Z_MAX - Z_MIN
+    score = (Z_MAX - z) * 1000 / ancho
+    return int(max(0, min(1000, score)))
 
 
 def main():
@@ -60,8 +64,8 @@ def main():
             "sesgo": sesgo_fijo,
             "min": MINIMOS,
             "max": MAXIMOS,
-            "sigmoide": SIGMOIDE,
-            "paso": PASO,
+            "z_min": Z_MIN,
+            "z_max": Z_MAX,
             "escala": SCALE,
         },
         sort_keys=True,
@@ -129,15 +133,9 @@ def main():
         "/// normalización y con ella el significado de los pesos.",
         "pub const MAXIMOS: [i128; 8] = [" + ", ".join(str(v) for v in MAXIMOS) + "];",
         "",
-        "/// Sigmoide muestreada cada medio punto entre -6 y 6, en punto fijo. Entre esos",
-        "/// puntos se interpola en línea recta; fuera del intervalo satura. El paso es de",
-        "/// medio punto porque con paso entero el score se apartaba hasta doce puntos del",
-        "/// modelo entrenado en la zona de mayor curvatura.",
-        f"pub const SIGMOIDE: [i128; {len(SIGMOIDE)}] = ["
-        + ", ".join(str(v) for v in SIGMOIDE)
-        + "];",
-        f"/// Separación entre dos puntos consecutivos de la tabla.",
-        f"pub const PASO: i128 = {PASO};",
+        "/// Rango de log-odds sobre el que se reparte la escala del score. Fuera de",
+        "/// estos límites el modelo ya está tan seguro que la diferencia deja de",
+        "/// importar para decidir un crédito, así que el score satura.",
         "pub const Z_MIN: i128 = -6;",
         "pub const Z_MAX: i128 = 6;",
         "",
