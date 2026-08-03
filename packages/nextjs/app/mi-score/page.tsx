@@ -123,6 +123,18 @@ export default function MiScore() {
   const corte = Number(umbral ?? 400);
   const ciclos = Number(ciclosVividos ?? 0);
   const faltanCiclos = Math.max(0, minimo - ciclos);
+  /**
+   * Si el historial todavía no tiene ninguna marca en contra.
+   *
+   * Cambia el texto cuando el puntaje llega al corte pero falta historial: no es lo mismo
+   * quien puntúa alto porque no hay nada que observar que quien ya arrastra un atraso. Dar
+   * el mismo mensaje a los dos le diría al segundo que va impecable.
+   */
+  const sinTacha =
+    Number(pagosAtrasados ?? 0) === 0 &&
+    Number(cuotasVencidas ?? 0) === 0 &&
+    Number(reclamosPerdidos ?? 0) === 0 &&
+    Number(impagosTrasCobro ?? 0) === 0;
 
   const cargandoScore = veredicto === undefined || historial === undefined;
   const porcentajeBarra = Math.min(100, ((score ?? 0) / 1000) * 100);
@@ -268,16 +280,28 @@ export default function MiScore() {
                         en cualquiera de las dos direcciones. */}
                     <span className="k-tag">AÚN NO HAY HISTORIAL SUFICIENTE</span>
                     <p className="k-corazon mt-6 max-w-2xl text-xl leading-relaxed text-[--color-marfil]">
-                      Tu puntaje ya está donde tiene que estar. Lo que falta es tiempo.
+                      {sinTacha
+                        ? "Tu puntaje ya está donde tiene que estar. Lo que falta es tiempo."
+                        : "Tu puntaje alcanza el corte, pero todavía no hay junta detrás que lo sostenga."}
                     </p>
                     <p className="mt-5 max-w-2xl leading-relaxed text-[--color-gris]">
                       Esto no es un rechazo. Llevas {ciclos} {ciclos === 1 ? "ciclo" : "ciclos"} y hacen falta {minimo}:{" "}
-                      {faltanCiclos === 1 ? "queda uno" : `quedan ${faltanCiclos}`}. Quien recién empieza puntúa alto
-                      porque todavía no hay nada malo que observar, y confundir{" "}
-                      <span className="k-corazon text-[--color-marfil]">no sé</span> con{" "}
-                      <span className="k-corazon text-[--color-marfil]">excelente</span> sería precisamente el error que
-                      arruina a un sistema de crédito. Sigue pagando tus cuotas: cada ciclo que cierras convierte tu
-                      puntaje en algo que se sostiene.
+                      {faltanCiclos === 1 ? "queda uno" : `quedan ${faltanCiclos}`}.{" "}
+                      {sinTacha ? (
+                        <>
+                          Quien recién empieza puntúa alto porque todavía no hay nada malo que observar, y confundir{" "}
+                          <span className="k-corazon text-[--color-marfil]">no sé</span> con{" "}
+                          <span className="k-corazon text-[--color-marfil]">excelente</span> sería precisamente el error
+                          que arruina a un sistema de crédito.
+                        </>
+                      ) : (
+                        <>
+                          Tu historial ya tiene marcas —están en las señales de abajo— y con tan poca junta detrás no
+                          alcanzan para condenarte ni para absolverte. Un tropiezo temprano no define a nadie, del mismo
+                          modo que dos ciclos limpios tampoco probarían nada.
+                        </>
+                      )}{" "}
+                      Sigue pagando tus cuotas: cada ciclo que cierras convierte tu puntaje en algo que se sostiene.
                     </p>
                   </>
                 ) : (
@@ -305,7 +329,10 @@ export default function MiScore() {
                 <Senal
                   termino="Cumplimiento"
                   valor={porcentaje(tasaCumplimiento)}
-                  explica="De todas las cuotas que te tocaba poner, qué parte pusiste a tiempo."
+                  // Es cuotas pagadas sobre ciclos vencidos, sin mirar la puntualidad: de eso
+                  // hablan las dos señales siguientes. Decir "a tiempo" aquí contradecía la de
+                  // al lado — 50% de cumplimiento junto a cero pagos puntuales.
+                  explica="De todas las cuotas que te tocaba poner, qué parte llegaste a poner."
                 />
                 <Senal
                   termino="Pagos a tiempo"
