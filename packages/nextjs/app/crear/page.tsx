@@ -332,6 +332,22 @@ export default function CrearJunta() {
               <Dato termino="Dura en total" valor={enPalabras(miembros * periodo)} />
             </div>
 
+            {/* Una junta de dos personas es una junta válida, pero nunca va a servir para
+                pedir crédito, y quien la crea merece saberlo antes de firmar y no tres
+                ciclos después. Una junta dura tantos ciclos como miembros tenga: con menos
+                de tres nunca alcanza el mínimo de historial que el fondo exige. No bloquea
+                nada —ahorrar entre dos es legítimo—, solo lo dice. */}
+            {miembros >= 2 && miembros < 3 && (
+              <div className="k-tarjeta p-6">
+                <p className="k-rotulo mb-3">Esta junta no dará crédito</p>
+                <p className="text-sm leading-relaxed text-[--color-gris]">
+                  Una junta dura tantos ciclos como miembros tiene, y el fondo exige tres ciclos de historial antes de
+                  prestarle a nadie. Con {miembros} nunca se llega. Sirve para ahorrar en grupo, no para construir
+                  reputación: para eso, súmale a alguien más.
+                </p>
+              </div>
+            )}
+
             {fase === "editando" ? (
               <>
                 {mostrarProblemas && problemas.length > 0 && (
