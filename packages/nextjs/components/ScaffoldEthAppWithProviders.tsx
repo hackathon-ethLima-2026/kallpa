@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { usePathname } from "next/navigation";
 import { BackGround } from "./Background";
 import { RainbowKitProvider, darkTheme, lightTheme } from "@rainbow-me/rainbowkit";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -17,12 +18,28 @@ import { arbitrumNitro, initBurnerPK } from "~~/utils/scaffold-stylus";
 
 const ScaffoldEthApp = ({ children }: { children: React.ReactNode }) => {
   const { targetNetwork } = useTargetNetwork();
+  const ruta = usePathname();
 
   useEffect(() => {
     if (targetNetwork.id === arbitrumNitro.id) {
       initBurnerPK();
     }
   }, [targetNetwork]);
+
+  // Las pantallas de Kallpa traen su propia cabecera y su propio fondo. El armazón que
+  // viene con el andamiaje se reserva para las herramientas de desarrollo —el explorador y
+  // el depurador de contratos—, que siguen siendo útiles para que un jurado hurgue por su
+  // cuenta pero no deben aparecer encima del producto.
+  const esHerramienta = ruta.startsWith("/debug") || ruta.startsWith("/blockexplorer");
+
+  if (!esHerramienta) {
+    return (
+      <>
+        {children}
+        <Toaster />
+      </>
+    );
+  }
 
   return (
     <>

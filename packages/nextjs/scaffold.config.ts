@@ -23,8 +23,10 @@ export type ScaffoldConfig = {
 export const DEFAULT_ALCHEMY_API_KEY = "oKxs-03sij-U_N0iOlrSsZFr29-IqbuF";
 
 const scaffoldConfig = {
-  // The networks on which your DApp is live
-  targetNetworks: [chains.arbitrumNitro],
+  // Arbitrum Sepolia: es donde viven los contratos desplegados y la demostración
+  // sembrada. Apuntar a la cadena local dejaría al frontend leyendo un vacío, porque las
+  // direcciones de `deployedContracts.ts` solo existen en la testnet.
+  targetNetworks: [chains.arbitrumSepolia],
 
   // The interval at which your front-end polls the RPC servers for new data
   // it has no effect if you only target the local network (default is 4000)

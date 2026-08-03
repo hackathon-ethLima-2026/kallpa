@@ -4,6 +4,9 @@
 @source "../components";
 @source "../utils";
 
+/* Sistema de diseño de Kallpa: paleta, tipografía y componentes de marca. */
+@import "./kallpa.css";
+
 @custom-variant dark (&:where([data-theme=dark], [data-theme=dark] *));
 
 @theme {

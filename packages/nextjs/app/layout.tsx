@@ -1,4 +1,4 @@
-import { Inter, Orbitron } from "next/font/google";
+import { Inter, Instrument_Serif, JetBrains_Mono, Orbitron, Space_Grotesk } from "next/font/google";
 import "@rainbow-me/rainbowkit/styles.css";
 import { Metadata } from "next";
 import { ScaffoldEthAppWithProviders } from "~~/components/ScaffoldEthAppWithProviders";
@@ -8,6 +8,26 @@ import "~~/styles/globals.css";
 const inter = Inter({
   subsets: ["latin"],
   variable: "--font-inter",
+});
+
+// Las tres voces del sistema: la sans habla, la serif siente, la mono prueba.
+const spaceGrotesk = Space_Grotesk({
+  subsets: ["latin"],
+  variable: "--font-space-grotesk",
+  weight: ["500", "700"],
+});
+
+const instrumentSerif = Instrument_Serif({
+  subsets: ["latin"],
+  variable: "--font-instrument-serif",
+  weight: ["400"],
+  style: ["normal", "italic"],
+});
+
+const jetbrainsMono = JetBrains_Mono({
+  subsets: ["latin"],
+  variable: "--font-jetbrains-mono",
+  weight: ["400", "500", "700"],
 });
 
 const orbitron = Orbitron({
@@ -21,9 +41,10 @@ const baseUrl = process.env.VERCEL_URL
   : `http://localhost:${process.env.PORT || 3000}`;
 const imageUrl = `${baseUrl}/thumbnail.jpg`;
 
-const title = "Create Stylus Dapp";
-const titleTemplate = "%s | Create Stylus Dapp";
-const description = "Built with 🏗 Scaffold-Stylus";
+const title = "Kallpa — La caja que no puede mentir ni robar";
+const titleTemplate = "%s | Kallpa";
+const description =
+  "Juntas de ahorro custodiadas por contratos, con un score de crédito que se computa dentro de Arbitrum.";
 
 export const metadata: Metadata = {
   metadataBase: new URL(baseUrl),
@@ -61,7 +82,10 @@ export const metadata: Metadata = {
 const ScaffoldEthApp = ({ children }: { children: React.ReactNode }) => {
   return (
     <html suppressHydrationWarning>
-      <body className={`${inter.variable} ${orbitron.variable} font-sans`} suppressHydrationWarning>
+      <body
+        className={`${inter.variable} ${orbitron.variable} ${spaceGrotesk.variable} ${instrumentSerif.variable} ${jetbrainsMono.variable} font-sans`}
+        suppressHydrationWarning
+      >
         <ThemeProvider>
           <ScaffoldEthAppWithProviders>{children}</ScaffoldEthAppWithProviders>
         </ThemeProvider>

@@ -1,0 +1,234 @@
+/**
+ * Sistema de diseño de Kallpa.
+ *
+ * Los valores no son decorativos: vienen del manual de marca y cada uno tiene un papel
+ * asignado. Las reglas que más importan y que conviene no romper:
+ *
+ *   · El oro es acento, nunca fondo grande. Sobre una superficie amplia deja de significar
+ *     "esto es valioso" y pasa a ser ruido.
+ *   · El azul de Arbitrum es exclusivamente para etiquetas técnicas. Nunca en un titular:
+ *     la marca es Kallpa, no la cadena sobre la que corre.
+ *   · Toda cifra verificable en la cadena va en monoespaciada. La regla del manual es
+ *     literal: "si está en mono, está on-chain". Eso convierte la tipografía en una señal
+ *     de confianza en vez de una preferencia estética.
+ *   · Las esquinas son de 4px. La marca es sobria, no amigable de más.
+ */
+
+@theme {
+  /* Fondo principal. Tinta azulada, nunca negro puro. */
+  --color-noche: #0b0f16;
+  /* Acento principal: valor, ahorro, lo verificado. */
+  --color-oro: #f0b429;
+  /* Faceta del rombo, hover y estados secundarios. */
+  --color-oro-hondo: #c98f1b;
+  /* Texto principal sobre oscuro. */
+  --color-marfil: #f4f2ec;
+  /* Texto secundario y metadatos. */
+  --color-gris: #8a94a6;
+  /* Solo etiquetas técnicas. Nunca protagonista. */
+  --color-arbitrum: #12aaff;
+  /* Superficies y tarjetas. */
+  --color-carbon: #121a26;
+  /* Bordes: sutil, normal y activo. */
+  --color-linea-sutil: #1a2433;
+  --color-linea: #223046;
+  --color-linea-viva: #38465c;
+  /* Fondo del sello de verificación. Es el único elemento con verdoso. */
+  --color-sello: #18230f;
+  /* Estados. */
+  --color-bien: #4ade80;
+  --color-mal: #f87171;
+
+  --font-voz: var(--font-space-grotesk), "Archivo", system-ui, sans-serif;
+  --font-corazon: var(--font-instrument-serif), Georgia, serif;
+  --font-prueba: var(--font-jetbrains-mono), ui-monospace, monospace;
+
+  --radius-kallpa: 4px;
+}
+
+/* ── Base ─────────────────────────────────────────────────────────────────────────── */
+
+.kallpa {
+  background: var(--color-noche);
+  color: var(--color-marfil);
+  font-family: var(--font-voz);
+  -webkit-font-smoothing: antialiased;
+  min-height: 100vh;
+}
+
+.kallpa ::selection {
+  background: var(--color-oro);
+  color: var(--color-noche);
+}
+
+/* ── Tipografía ───────────────────────────────────────────────────────────────────── */
+
+/** Titulares y texto de interfaz. */
+.k-voz {
+  font-family: var(--font-voz);
+}
+
+/** Énfasis humano: lemas y frases que tienen que sonar a persona, no a sistema. */
+.k-corazon {
+  font-family: var(--font-corazon);
+  font-style: italic;
+}
+
+/** Todo dato que se puede verificar en la cadena. */
+.k-prueba {
+  font-family: var(--font-prueba);
+  font-variant-numeric: tabular-nums;
+}
+
+/** Rótulo de sección: pequeño, dorado y muy espaciado. */
+.k-rotulo {
+  font-family: var(--font-prueba);
+  font-size: 11px;
+  letter-spacing: 0.22em;
+  color: var(--color-oro);
+  text-transform: uppercase;
+}
+
+/** Metadato discreto. */
+.k-meta {
+  font-family: var(--font-prueba);
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  color: var(--color-gris);
+}
+
+/* ── Superficies ──────────────────────────────────────────────────────────────────── */
+
+.k-tarjeta {
+  background: var(--color-carbon);
+  border: 1px solid var(--color-linea);
+  border-radius: var(--radius-kallpa);
+}
+
+.k-tarjeta-honda {
+  background: var(--color-noche);
+  border: 1px solid var(--color-linea);
+  border-radius: var(--radius-kallpa);
+  transition: border-color 0.15s ease;
+}
+
+.k-tarjeta-honda:hover {
+  border-color: var(--color-linea-viva);
+}
+
+/* ── Acciones ─────────────────────────────────────────────────────────────────────── */
+
+.k-boton {
+  background: var(--color-oro);
+  color: var(--color-noche);
+  border: none;
+  border-radius: var(--radius-kallpa);
+  padding: 15px 30px;
+  font-family: var(--font-voz);
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.k-boton:hover:not(:disabled) {
+  background: var(--color-oro-hondo);
+}
+
+.k-boton:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.k-boton-borde {
+  background: transparent;
+  color: var(--color-marfil);
+  border: 1px solid var(--color-linea-viva);
+  border-radius: var(--radius-kallpa);
+  padding: 15px 30px;
+  font-family: var(--font-voz);
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    color 0.15s ease;
+}
+
+.k-boton-borde:hover:not(:disabled) {
+  border-color: var(--color-oro);
+  color: var(--color-oro);
+}
+
+.k-boton-borde:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* ── Etiquetas y sellos ───────────────────────────────────────────────────────────── */
+
+/** Etiqueta técnica. El azul de Arbitrum vive aquí y en ningún otro lado. */
+.k-tag-tecnico {
+  font-family: var(--font-prueba);
+  font-size: 12px;
+  color: var(--color-arbitrum);
+  border: 1px solid color-mix(in srgb, var(--color-arbitrum) 33%, transparent);
+  border-radius: 999px;
+  padding: 6px 14px;
+  white-space: nowrap;
+}
+
+.k-tag {
+  font-family: var(--font-prueba);
+  font-size: 12px;
+  color: var(--color-gris);
+  border: 1px solid var(--color-linea);
+  border-radius: 999px;
+  padding: 6px 14px;
+  white-space: nowrap;
+}
+
+/**
+ * Sello de verificación. Es el único elemento del sistema con fondo verdoso, y por eso
+ * llama la atención: aparece cuando algo que podía fallar no falló.
+ */
+.k-sello {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--color-sello);
+  border: 1px solid var(--color-oro);
+  border-radius: var(--radius-kallpa);
+  padding: 13px 22px;
+  font-family: var(--font-prueba);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-oro);
+}
+
+/** La contracara: lo que se muestra cuando la verificación sí falla. */
+.k-sello-roto {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  background: color-mix(in srgb, var(--color-mal) 12%, var(--color-noche));
+  border: 1px solid var(--color-mal);
+  border-radius: var(--radius-kallpa);
+  padding: 13px 22px;
+  font-family: var(--font-prueba);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-mal);
+}
+
+/* ── Trama de fondo ───────────────────────────────────────────────────────────────── */
+
+/** Retícula tenue que evoca la construcción geométrica del isotipo. */
+.k-trama {
+  position: absolute;
+  inset: 0;
+  opacity: 0.5;
+  pointer-events: none;
+}
