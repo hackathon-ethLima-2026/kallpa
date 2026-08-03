@@ -41,8 +41,13 @@ const scaffoldConfig = {
   // If you want to use a different RPC for a specific network, you can add it here.
   // The key is the chain ID, and the value is the HTTP RPC URL
   rpcOverrides: {
-    // Example:
-    // [chains.mainnet.id]: "https://mainnet.buidlguidl.com",
+    // El punto de acceso oficial y publico de Arbitrum.
+    //
+    // Sin esto, el andamiaje usa una clave de Alchemy compartida que viene por defecto en
+    // el proyecto base: la usa todo el mundo, esta saturada, y devuelve "Failed to fetch"
+    // a mitad de una lectura. El sintoma es peor que una caida limpia, porque la interfaz
+    // se queda a medias sin decir por que.
+    [chains.arbitrumSepolia.id]: "https://sepolia-rollup.arbitrum.io/rpc",
   },
 
   // This is ours WalletConnect's default project ID.

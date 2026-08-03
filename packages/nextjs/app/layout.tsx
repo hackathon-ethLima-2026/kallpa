@@ -81,7 +81,9 @@ export const metadata: Metadata = {
 
 const ScaffoldEthApp = ({ children }: { children: React.ReactNode }) => {
   return (
-    <html suppressHydrationWarning>
+    // El tema va escrito en el HTML desde el servidor: Kallpa es oscuro siempre y no
+    // hace falta que nadie lo decida en el navegador.
+    <html data-theme="dark" suppressHydrationWarning>
       <body
         className={`${inter.variable} ${orbitron.variable} ${spaceGrotesk.variable} ${instrumentSerif.variable} ${jetbrainsMono.variable} font-sans`}
         suppressHydrationWarning
