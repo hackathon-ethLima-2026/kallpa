@@ -46,7 +46,7 @@ ciclos**.
 | AUC en el conjunto de prueba | 0.927 |
 | Semilla del dataset | 20260802 |
 | Equivalencia contrato ↔ Python | exacta, 0 puntos de diferencia sobre 20 vectores |
-| Gas de `record_score` | _pendiente — se mide con la primera llamada real_ |
+| Gas de `record_score` | **130 313** — medido, no estimado |
 
 El `modelHash` de la cadena coincide con el que produce `packages/ai-model/quantize.py`, así
 que las constantes desplegadas son exactamente las del modelo entrenado.
@@ -68,3 +68,46 @@ uint16 score, bool positive, uint32 juntaId, bytes32 modelHash, bytes32 features
 > Las direcciones de EAS se confirman contra la documentación oficial o el SDK antes de
 > fijarlas en el contrato. Una dirección equivocada cuesta horas de depuración por un error
 > que no se parece a su causa.
+
+## La demostración corriendo en la cadena
+
+Ejecutado con `packages/stylus/scripts/seed_demo.mjs` sobre los contratos desplegados.
+
+| Paso | Transacción |
+|---|---|
+| Crear la junta #0 | [`0xf52672b3…05f737`](https://sepolia.arbiscan.io/tx/0xf52672b3f7b03e799812f28f8932634546b49f337eb3c2619ad8480b9d05f737) |
+| Depositar la cuota | [`0x1ab3348a…0c01bc`](https://sepolia.arbiscan.io/tx/0x1ab3348aa0a05e56a4f4412b308b898194934ff0cc3b58ab22bf895b8b0c01bc) |
+| **Computar el score en cadena** | [`0x7e6a3135…c4c5b7`](https://sepolia.arbiscan.io/tx/0x7e6a313535912945fbd6d01546772f5a718f547ceb391ca3ac62ef138dc4c5b7) |
+
+**Resultado del cómputo:** score **892**, bloque 294178458, **130 313 de gas**.
+
+Ese gas cubre todo el camino: leer el historial de otro contrato, correr el modelo en
+aritmética de punto fijo, escribir el resultado y emitir el evento. No es una estimación.
+
+### El score se reproduce fuera de la cadena
+
+El contrato leyó este historial de la junta y computó 892:
+
+```
+tasa_cumplimiento    1000000      atraso_max_periodos  0
+pagos_puntuales            1      defaults_tras_cobro  0
+pagos_atrasados            0      antiguedad_periodos  0
+defaults                   0      disputas_perdidas    0
+```
+
+Pasando ese mismo vector por `packages/ai-model/fixed_point.py`, el resultado es **892**.
+Idéntico. Cualquiera puede repetir la comprobación sin pedirle permiso ni confianza a nadie,
+que es precisamente lo que hace que la afirmación se sostenga.
+
+### La política de crédito, actuando
+
+La misma transacción devolvió `positivo: false` pese al score de 892. No es un fallo: el
+miembro no acumula todavía los tres ciclos de historial que exige la política (ADR-0011). El
+modelo dice "buen candidato"; la política responde "todavía no te conozco lo suficiente". Es
+exactamente el comportamiento que impide prestarle el monto máximo a un desconocido.
+
+### Integridad de la caja
+
+```
+aportado 50000000 − distribuido 0 = 50000000   →   CUADRA ✓
+```
