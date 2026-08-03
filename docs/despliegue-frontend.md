@@ -1,5 +1,7 @@
 # Publicar el frontend
 
+En vivo: <https://kallpa-one.vercel.app>
+
 Los contratos ya viven en Arbitrum Sepolia (`docs/addresses.md`) y no se vuelven a tocar
 para publicar la aplicación. Lo único que se despliega aquí es la interfaz.
 
@@ -22,25 +24,37 @@ Se saca gratis en <https://cloud.reown.com> — crear proyecto, copiar el _Proje
 
 ## Publicar
 
-```bash
-cd packages/nextjs
-yarn vercel          # la primera vez pide iniciar sesión y crear el proyecto
-```
+El repositorio está conectado al proyecto de Vercel, así que **publicar es hacer `push` a
+`main`**. No hace falta ningún comando.
 
-Cuando pregunte por el directorio raíz, es `packages/nextjs` — es un monorepo y la
-aplicación no está en la raíz.
+La configuración vive en el `vercel.json` de la raíz: instala con el candado de la raíz
+(`yarn install --immutable`) y compila el espacio de trabajo del frontend. El
+`.vercelignore` deja fuera lo que no participa —sin él viajarían gigabytes de artefactos
+de compilación de Rust.
 
-Después, en el panel de Vercel, **Settings → Environment Variables**:
-
-```
-NEXT_PUBLIC_WALLET_CONNECT_PROJECT_ID = <el identificador de reown>
-```
-
-Y volver a publicar para que la variable entre en el paquete:
+La credencial ya está registrada en el proyecto. Para cambiarla:
 
 ```bash
-yarn vercel --prod
+printf '<el identificador>' | yarn vercel env add NEXT_PUBLIC_WALLET_CONNECT_PROJECT_ID production
 ```
+
+### Por qué se compila desde la raíz y no desde el paquete
+
+Vale la pena entenderlo porque costó dos despliegues fallidos.
+
+Desplegar con `vercel` desde `packages/nextjs` sube **solo esa carpeta**, así que
+`yarn install` corre sin el candado de la raíz y resuelve versiones frescas en lugar de las
+probadas. El candado fija `@coinbase/cdp-sdk` en 1.51.0 —entra por el conector de billetera
+de RainbowKit—; sin él se instalaba una versión más nueva que importa `@x402/*`, paquetes
+que nadie declara, y la compilación moría con ocho `Module not found`.
+
+Lo grave no era el error sino lo que revelaba: la máquina de quien programa y el servidor
+estaban instalando árboles de dependencias distintos. Un despliegue así funciona hoy y
+revienta el jueves sin que nadie haya tocado una línea.
+
+Queda además un `resolutions` en `packages/nextjs/package.json` que fija esa misma versión.
+Yarn 3 lo ignora en un paquete hijo, así que no hace nada aquí: solo protege a quien
+despliegue por línea de comandos desde esa carpeta, donde el candado no llega.
 
 ## Comprobar que quedó bien
 
