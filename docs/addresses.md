@@ -69,45 +69,64 @@ uint16 score, bool positive, uint32 juntaId, bytes32 modelHash, bytes32 features
 > fijarlas en el contrato. Una dirección equivocada cuesta horas de depuración por un error
 > que no se parece a su causa.
 
-## La demostración corriendo en la cadena
+## La demostración sembrada en la cadena
 
-Ejecutado con `packages/stylus/scripts/seed_demo.mjs` sobre los contratos desplegados.
+Sembrada con `packages/stylus/scripts/seed_demo.mjs`. Las dos juntas están **completas**, así
+que su historial ya no vuelve a moverse: se pueden mostrar cuando sea sin que nada se degrade.
 
-| Paso | Transacción |
+Los ocho miembros son cuentas de verdad, derivadas de una semilla fija — volver a sembrar
+produce siempre las mismas direcciones. Cada una firma sus propios depósitos, porque la
+cuota se acredita a quien la envía.
+
+### La misma persona, dos juntas, resultados opuestos
+
+Es el argumento entero del proyecto en una sola comparación: el score no mira quién eres,
+mira lo que hiciste.
+
+| | Junta #1 · Las Emprendedoras | Junta #2 · Los del Mercado |
+|---|---|---|
+| Qué hizo María | pagó sus ocho cuotas | cobró el pozo y dejó de aportar |
+| Cumplimiento | 100% | 12.5% |
+| Pagos puntuales | 8 | 1 |
+| Incumplimientos | 0 | 7 |
+| **Mora posterior al cobro** | 0 | **7** |
+| **Score** | **1000** | **194** |
+| **Crédito** | **200 mUSDC** | **SUSPENDIDO** |
+
+Nadie declaró nada para que el segundo caso se cerrara. María cobró su turno y dejó de
+pagar; el resto lo hizo el reloj de la cadena.
+
+### Transacciones
+
+| Qué | Transacción |
 |---|---|
-| Crear la junta #0 | [`0xf52672b3…05f737`](https://sepolia.arbiscan.io/tx/0xf52672b3f7b03e799812f28f8932634546b49f337eb3c2619ad8480b9d05f737) |
-| Depositar la cuota | [`0x1ab3348a…0c01bc`](https://sepolia.arbiscan.io/tx/0x1ab3348aa0a05e56a4f4412b308b898194934ff0cc3b58ab22bf895b8b0c01bc) |
-| **Computar el score en cadena** | [`0x7e6a3135…c4c5b7`](https://sepolia.arbiscan.io/tx/0x7e6a313535912945fbd6d01546772f5a718f547ceb391ca3ac62ef138dc4c5b7) |
+| María cobra el pozo (junta #2) | [`0xdc9cbc4f…eb09e3`](https://sepolia.arbiscan.io/tx/0xdc9cbc4f7374f92b6f4cf815bbeef7f1408082eb505e056898b0d873b8eb09e3) |
+| **Score en cadena · junta #1** | [`0xd5b3a918…032646`](https://sepolia.arbiscan.io/tx/0xd5b3a918573a6901524ce4a7a436e42e6a3ae04eed482275424bf643ab032646) |
+| **Score en cadena · junta #2** | [`0x62059622…d9180e`](https://sepolia.arbiscan.io/tx/0x62059622c1b3b9918269d771cf94963a2dcd030483414043f12984ff58d9180e) |
 
-**Resultado del cómputo:** score **892**, bloque 294178458, **130 313 de gas**.
-
-Ese gas cubre todo el camino: leer el historial de otro contrato, correr el modelo en
-aritmética de punto fijo, escribir el resultado y emitir el evento. No es una estimación.
+**Gas de `record_score` con historial completo: 150 337.** Cubre leer el historial de otro
+contrato, correr el modelo en aritmética de punto fijo, escribir el resultado y emitir el
+evento. Es un número medido, no estimado.
 
 ### El score se reproduce fuera de la cadena
 
-El contrato leyó este historial de la junta y computó 892:
+Los dos vectores, tal como los devolvió la Junta desplegada, pasados por
+`packages/ai-model/fixed_point.py`:
 
-```
-tasa_cumplimiento    1000000      atraso_max_periodos  0
-pagos_puntuales            1      defaults_tras_cobro  0
-pagos_atrasados            0      antiguedad_periodos  0
-defaults                   0      disputas_perdidas    0
-```
+| Vector leído de la cadena | Contrato | Python |
+|---|---|---|
+| `[1000000, 8, 0, 0, 0, 0, 8, 0]` | 1000 | **1000** |
+| `[125000, 1, 0, 7, 0, 7, 8, 0]` | 194 | **194** |
 
-Pasando ese mismo vector por `packages/ai-model/fixed_point.py`, el resultado es **892**.
-Idéntico. Cualquiera puede repetir la comprobación sin pedirle permiso ni confianza a nadie,
+Idénticos. Cualquiera puede repetir la comprobación sin pedirle permiso ni confianza a nadie,
 que es precisamente lo que hace que la afirmación se sostenga.
-
-### La política de crédito, actuando
-
-La misma transacción devolvió `positivo: false` pese al score de 892. No es un fallo: el
-miembro no acumula todavía los tres ciclos de historial que exige la política (ADR-0011). El
-modelo dice "buen candidato"; la política responde "todavía no te conozco lo suficiente". Es
-exactamente el comportamiento que impide prestarle el monto máximo a un desconocido.
 
 ### Integridad de la caja
 
 ```
-aportado 50000000 − distribuido 0 = 50000000   →   CUADRA ✓
+aportado 3 650 000 000 − distribuido 3 600 000 000 = 50 000 000
+saldo real del token en el contrato: 50 000 000        →  CUADRA ✓
 ```
+
+Los 50 mUSDC que quedan son la cuota que María aportó a la junta #2 antes de cobrar: entró a
+la caja y todavía no salió, porque los turnos restantes de esa junta no se repartieron.
