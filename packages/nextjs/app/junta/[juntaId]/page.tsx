@@ -92,8 +92,20 @@ export default function DetalleDeJunta({ params }: { params: Promise<{ juntaId: 
 
   const miembros = Number(totalMiembros ?? 0);
   const cicloActual = Number(ciclo ?? 0);
-  const terminada = cicloActual >= miembros;
   const turnoActual = Number(turno ?? 0);
+  /**
+   * Una junta termina cuando **todos cobraron su turno**, no cuando se acaba el tiempo.
+   *
+   * Es la misma regla del contrato: `distribute` solo rechaza con `JuntaCompleta` cuando
+   * `turno >= miembros`, y `deposit` solo rechaza cuando ya pagaste todas tus cuotas. El
+   * reloj puede adelantarse a los turnos —es exactamente lo que ocurre cuando alguien paga
+   * tarde— y confundir esas dos cosas dejaba la junta muerta en la pantalla: se anunciaba
+   * terminada, se escondía el botón de pagar y el de cobrar, mientras el contrato aceptaba
+   * ambas operaciones sin problema.
+   */
+  const terminada = turnoActual >= miembros;
+  /** Vencieron todos los ciclos y aún quedan turnos por cobrar: la junta sigue viva. */
+  const plazoVencido = cicloActual >= miembros && !terminada;
   const meTocaCobrar = Number(miTurno ?? -1) === turnoActual && !terminada;
   const puedeRepartir = cicloActual > turnoActual && turnoActual < miembros;
   const saldoInsuficiente = saldo !== undefined && cuota !== undefined && saldo < cuota;
@@ -139,6 +151,14 @@ export default function DetalleDeJunta({ params }: { params: Promise<{ juntaId: 
             <>
               Esta junta ya <span className="text-[--color-oro]">terminó</span>: todos cobraron
               su turno y su historial quedó fijo para siempre.
+            </>
+          ) : plazoVencido ? (
+            <>
+              Ya vencieron los {miembros} ciclos y todavía falta{miembros - turnoActual === 1 ? "" : "n"}{" "}
+              <span className="text-[--color-oro]">
+                {miembros - turnoActual} turno{miembros - turnoActual === 1 ? "" : "s"}
+              </span>{" "}
+              por cobrar. Lo que se deba a estas alturas ya cuenta como atraso.
             </>
           ) : (
             <>

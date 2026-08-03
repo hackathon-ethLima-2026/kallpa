@@ -16,9 +16,14 @@ import { RuedaDeJunta } from "~~/components/kallpa/Isotipo";
 import { mUSDC } from "~~/components/kallpa/cifras";
 import { useScaffoldReadContract } from "~~/hooks/scaffold-eth";
 
-/** Cuánto falta para que venza el ciclo en curso, en palabras. */
+/**
+ * Cuánto falta para que venza el ciclo en curso, en palabras.
+ *
+ * Habla solo del reloj. Que el plazo se cumpla no significa que la junta haya terminado:
+ * eso lo decide el turno, y lo resuelve quien llama.
+ */
 function cuandoVence(inicio: bigint, periodo: bigint, ciclo: number, total: number) {
-  if (ciclo >= total) return "junta terminada";
+  if (ciclo >= total) return "plazo cumplido";
   const vence = Number(inicio) + (ciclo + 1) * Number(periodo);
   const faltan = vence - Math.floor(Date.now() / 1000);
   if (faltan <= 0) return "vencido";
@@ -68,7 +73,12 @@ export const TarjetaDeJunta = ({ juntaId, miembro }: { juntaId: number; miembro?
 
   const miembros = Number(totalMiembros ?? 0);
   const cicloActual = Number(ciclo ?? 0);
-  const terminada = cicloActual >= miembros;
+  const turnoActual = Number(turno ?? 0);
+  // La junta termina cuando todos cobraron, no cuando se acaba el tiempo: es la regla del
+  // contrato. Si alguien paga tarde el reloj se adelanta a los turnos, y tratar eso como el
+  // final anunciaba una junta muerta que en realidad seguía viva.
+  const terminada = turnoActual >= miembros;
+  const faltanTurnos = miembros - turnoActual;
   const debeCuotas = Number(debe ?? 0);
 
   return (
@@ -77,15 +87,25 @@ export const TarjetaDeJunta = ({ juntaId, miembro }: { juntaId: number; miembro?
         <div className="flex items-start justify-between gap-3">
           <div>
             <h3 className="k-voz text-xl font-bold text-[--color-marfil]">{nombre || `Junta #${juntaId}`}</h3>
-            <p className="k-meta mt-1">{terminada ? "COMPLETA" : `CICLO ${cicloActual + 1} DE ${miembros}`}</p>
+            <p className="k-meta mt-1">
+              {terminada
+                ? "COMPLETA"
+                : cicloActual >= miembros
+                  ? `FALTA${faltanTurnos === 1 ? "" : "N"} ${faltanTurnos} POR COBRAR`
+                  : `CICLO ${cicloActual + 1} DE ${miembros}`}
+            </p>
           </div>
-          <RuedaDeJunta miembros={miembros} turnosCobrados={Number(turno ?? 0)} size={56} className="shrink-0" />
+          <RuedaDeJunta miembros={miembros} turnosCobrados={turnoActual} size={56} className="shrink-0" />
         </div>
 
         <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-2">
           <span className="k-prueba text-[15px] text-[--color-oro]">{mUSDC(cuota)} mUSDC / cuota</span>
           <span className="k-prueba text-xs text-[--color-gris]">
-            {inicio !== undefined && periodo !== undefined ? cuandoVence(inicio, periodo, cicloActual, miembros) : ""}
+            {terminada
+              ? "junta terminada"
+              : inicio !== undefined && periodo !== undefined
+                ? cuandoVence(inicio, periodo, cicloActual, miembros)
+                : ""}
           </span>
         </div>
 
