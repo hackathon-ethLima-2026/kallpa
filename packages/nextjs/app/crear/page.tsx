@@ -17,8 +17,10 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { isAddress, parseUnits } from "viem";
 import { useAccount } from "wagmi";
+import { Dato } from "~~/components/kallpa/Dato";
 import { RuedaDeJunta } from "~~/components/kallpa/Isotipo";
 import { Cargando, Marco, PideBilletera, Titulo, Vacio } from "~~/components/kallpa/Marco";
+import { mUSDC } from "~~/components/kallpa/cifras";
 import { Address } from "~~/components/scaffold-eth";
 import { useScaffoldReadContract, useScaffoldWriteContract } from "~~/hooks/scaffold-eth";
 
@@ -42,8 +44,6 @@ const aCuotaBase = (texto: string): bigint | null => {
   if (!CUOTA_VALIDA.test(limpio)) return null;
   return parseUnits(limpio, 6);
 };
-
-const mUSDC = (v: bigint) => (Number(v) / 1e6).toLocaleString("es-PE", { maximumFractionDigits: 2 });
 
 /** Duración en palabras, eligiendo la unidad más grande que dé exacta. */
 const enPalabras = (segundos: number) => {
@@ -366,10 +366,3 @@ export default function CrearJunta() {
     </Marco>
   );
 }
-
-const Dato = ({ termino, valor, destacado }: { termino: string; valor: string; destacado?: boolean }) => (
-  <div>
-    <p className="k-meta mb-1">{termino.toUpperCase()}</p>
-    <p className={`k-prueba text-lg ${destacado ? "text-[--color-oro]" : "text-[--color-marfil]"}`}>{valor}</p>
-  </div>
-);

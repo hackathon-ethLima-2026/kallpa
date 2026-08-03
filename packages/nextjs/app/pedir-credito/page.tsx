@@ -17,11 +17,11 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useAccount } from "wagmi";
+import { Dato } from "~~/components/kallpa/Dato";
 import { Cargando, Marco, PideBilletera, Titulo, Vacio } from "~~/components/kallpa/Marco";
+import { SelectorDeJunta, useNombreDeJunta } from "~~/components/kallpa/SelectorDeJunta";
+import { mUSDC } from "~~/components/kallpa/cifras";
 import { useDeployedContractInfo, useScaffoldReadContract, useScaffoldWriteContract } from "~~/hooks/scaffold-eth";
-
-const mUSDC = (v: bigint | undefined) =>
-  v === undefined ? "—" : (Number(v) / 1e6).toLocaleString("es-PE", { maximumFractionDigits: 2 });
 
 /**
  * Los tramos, copiados de la política del Pool.
@@ -110,6 +110,10 @@ export default function PedirCredito() {
   const momentoPrestamo = prestamo?.[2] as bigint | undefined;
   const scoreAlPrestar = prestamo?.[3] as number | undefined;
   const prestamoActivo = prestamo?.[4] as boolean | undefined;
+
+  // El préstamo puede venir de una junta distinta a la que estás mirando, así que se nombra
+  // con su nombre: "#2" no le dice nada a nadie.
+  const nombreDelPrestamo = useNombreDeJunta(juntaDelPrestamo);
 
   // La antigüedad es la séptima señal del historial: cuántos ciclos vencieron para este
   // miembro. Es la que decide si el score significa algo o solo refleja la ausencia de datos.
@@ -216,27 +220,26 @@ export default function PedirCredito() {
             "junta, paga tus cuotas y en tres ciclos vuelve por aquí."
           }
           accion={
-            <Link href="/" className="k-boton no-underline">
-              Ver mis juntas
-            </Link>
+            <div className="flex flex-wrap gap-3">
+              <Link href="/crear" className="k-boton no-underline">
+                Crear una junta
+              </Link>
+              <Link href="/" className="k-boton-borde no-underline">
+                Ver mis juntas
+              </Link>
+            </div>
           }
         />
       ) : (
         <div className="mb-10 flex flex-col gap-6">
           {/* ── De qué junta hablamos ──────────────────────────────────────────────── */}
-          {lista.length > 1 && (
-            <div>
-              <p className="k-rotulo mb-3">Tu historial en</p>
-              <div className="flex flex-wrap gap-2">
-                {lista.map(id => (
-                  <BotonDeJunta key={id} juntaId={id} activa={id === juntaId} alElegir={() => setElegida(id)} />
-                ))}
-              </div>
-              <p className="mt-3 text-sm text-[--color-gris]">
-                Cada junta tiene su propio historial. El fondo mira la que elijas.
-              </p>
-            </div>
-          )}
+          <SelectorDeJunta
+            ids={lista}
+            elegida={juntaId}
+            alElegir={setElegida}
+            rotulo="Tu historial en"
+            nota="Cada junta tiene su propio historial. El fondo mira la que elijas."
+          />
 
           <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
             <div className="flex flex-col gap-6">
@@ -249,10 +252,14 @@ export default function PedirCredito() {
                   <div className="grid grid-cols-2 gap-6 sm:grid-cols-3">
                     <Dato termino="Tu score" valor={`${score ?? 0} / 1000`} destacado />
                     <Dato termino="Ciclos cumplidos" valor={`${ciclos ?? 0} de ${minimo}`} />
+                    {/* El rojo se reserva para el único "no" que es un reproche. A quien solo le
+                        falta trayectoria se le dice "todavía no", y teñirlo de rojo lo convertiría
+                        en un castigo por ser nuevo — el error que esta pantalla existe para no
+                        cometer. */}
                     <Dato
                       termino="Te prestaría"
-                      valor={conCredito ? `${mUSDC(montoDelTramo)} mUSDC` : "nada aún"}
-                      alerta={!conCredito}
+                      valor={conCredito ? `${mUSDC(montoDelTramo)} mUSDC` : "todavía nada"}
+                      alerta={score !== undefined && score < umbral}
                     />
                   </div>
                 </div>
@@ -265,7 +272,7 @@ export default function PedirCredito() {
                 {prestamoActivo && (
                   <div className="mb-6 grid grid-cols-2 gap-6 sm:grid-cols-4">
                     <Dato termino="Debes" valor={`${mUSDC(montoPrestamo)} mUSDC`} destacado />
-                    <Dato termino="Por la junta" valor={`#${Number(juntaDelPrestamo ?? 0)}`} />
+                    <Dato termino="Por la junta" valor={nombreDelPrestamo || `#${Number(juntaDelPrestamo ?? 0)}`} />
                     <Dato termino="Score al prestar" valor={String(scoreAlPrestar ?? 0)} />
                     <Dato
                       termino="Desde"
@@ -394,48 +401,3 @@ export default function PedirCredito() {
     </Marco>
   );
 }
-
-/** Un botón del selector. Lee su propio nombre porque el nombre vive en la cadena. */
-const BotonDeJunta = ({ juntaId, activa, alElegir }: { juntaId: number; activa: boolean; alElegir: () => void }) => {
-  const { data: nombre } = useScaffoldReadContract({
-    contractName: "junta",
-    functionName: "juntaNombre",
-    args: [juntaId],
-  });
-
-  return (
-    <button
-      onClick={alElegir}
-      className={`rounded-[4px] border px-4 py-2.5 text-sm transition-colors ${
-        activa
-          ? "border-[--color-oro] bg-[--color-carbon] text-[--color-oro]"
-          : "border-[--color-linea] text-[--color-gris] hover:border-[--color-linea-viva] hover:text-[--color-marfil]"
-      }`}
-    >
-      {(nombre as string) || `Junta #${juntaId}`}
-    </button>
-  );
-};
-
-const Dato = ({
-  termino,
-  valor,
-  destacado,
-  alerta,
-}: {
-  termino: string;
-  valor: string;
-  destacado?: boolean;
-  alerta?: boolean;
-}) => (
-  <div>
-    <p className="k-meta mb-1">{termino.toUpperCase()}</p>
-    <p
-      className={`k-prueba text-lg ${
-        alerta ? "text-[--color-mal]" : destacado ? "text-[--color-oro]" : "text-[--color-marfil]"
-      }`}
-    >
-      {valor}
-    </p>
-  </div>
-);

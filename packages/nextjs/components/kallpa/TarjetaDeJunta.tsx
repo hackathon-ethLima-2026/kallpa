@@ -13,10 +13,8 @@
 
 import Link from "next/link";
 import { RuedaDeJunta } from "~~/components/kallpa/Isotipo";
+import { mUSDC } from "~~/components/kallpa/cifras";
 import { useScaffoldReadContract } from "~~/hooks/scaffold-eth";
-
-const mUSDC = (v: bigint | undefined) =>
-  v === undefined ? "—" : (Number(v) / 1e6).toLocaleString("es-PE", { maximumFractionDigits: 2 });
 
 /** Cuánto falta para que venza el ciclo en curso, en palabras. */
 function cuandoVence(inicio: bigint, periodo: bigint, ciclo: number, total: number) {

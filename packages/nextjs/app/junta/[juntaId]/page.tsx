@@ -13,13 +13,12 @@
 import { use, useState } from "react";
 import Link from "next/link";
 import { useAccount } from "wagmi";
+import { Dato } from "~~/components/kallpa/Dato";
 import { RuedaDeJunta } from "~~/components/kallpa/Isotipo";
 import { Cargando, Marco, PideBilletera, Titulo, Vacio } from "~~/components/kallpa/Marco";
+import { mUSDC } from "~~/components/kallpa/cifras";
 import { Address } from "~~/components/scaffold-eth";
-import { useScaffoldReadContract, useScaffoldWriteContract } from "~~/hooks/scaffold-eth";
-
-const mUSDC = (v: bigint | undefined) =>
-  v === undefined ? "—" : (Number(v) / 1e6).toLocaleString("es-PE", { maximumFractionDigits: 2 });
+import { useDeployedContractInfo, useScaffoldReadContract, useScaffoldWriteContract } from "~~/hooks/scaffold-eth";
 
 export default function DetalleDeJunta({ params }: { params: Promise<{ juntaId: string }> }) {
   const { juntaId } = use(params);
@@ -52,10 +51,10 @@ export default function DetalleDeJunta({ params }: { params: Promise<{ juntaId: 
     functionName: "miembros",
     args: [id],
   });
-  const { data: contratoJunta } = useScaffoldReadContract({
-    contractName: "junta",
-    functionName: "token",
-  });
+  // Quien va a cobrarte es el contrato de la junta, así que es a él a quien hay que autorizar.
+  // Antes esto leía `junta.token()`, que devuelve la dirección del mUSDC: el permiso quedaba a
+  // nombre del propio token y pagar la cuota reventaba por autorización insuficiente.
+  const { data: contratoJunta } = useDeployedContractInfo({ contractName: "junta" });
   const { data: saldo } = useScaffoldReadContract({
     contractName: "mock_usdc",
     functionName: "balanceOf",
@@ -104,14 +103,14 @@ export default function DetalleDeJunta({ params }: { params: Promise<{ juntaId: 
    * paso en lugar de dos.
    */
   const pagarCuota = async () => {
-    if (!cuota) return;
+    if (!cuota || !contratoJunta?.address) return;
     try {
-      setTrabajando("Autorizando al contrato…");
+      setTrabajando("Paso 1 de 2 · Autorizando al contrato…");
       await escribirToken({
         functionName: "approve",
-        args: [contratoJunta as `0x${string}`, cuota * 24n],
+        args: [contratoJunta.address, cuota * 24n],
       });
-      setTrabajando("Pagando la cuota…");
+      setTrabajando("Paso 2 de 2 · Pagando la cuota…");
       await escribirJunta({ functionName: "deposit", args: [id] });
       await Promise.all([releerEstado(), releerMiEstado()]);
     } finally {
@@ -199,6 +198,14 @@ export default function DetalleDeJunta({ params }: { params: Promise<{ juntaId: 
                 </div>
               )}
 
+              {!terminada && !trabajando && Number(cuotasPagadas ?? 0) < miembros && (
+                <p className="mt-4 max-w-xl text-sm leading-relaxed text-[--color-gris]">
+                  Tu billetera te va a pedir firmar <span className="text-[--color-marfil]">dos veces</span>: primero
+                  autorizas al contrato a cobrarte, y recién después se paga la cuota. Así funciona este token, y
+                  preferimos decírtelo a que te sorprenda.
+                </p>
+              )}
+
               {saldoInsuficiente && !trabajando && (
                 <p className="mt-4 text-sm text-[--color-mal]">
                   No te alcanza el saldo: tienes {mUSDC(saldo)} mUSDC y la cuota es{" "}
@@ -271,20 +278,3 @@ export default function DetalleDeJunta({ params }: { params: Promise<{ juntaId: 
     </Marco>
   );
 }
-
-const Dato = ({
-  termino,
-  valor,
-  alerta,
-}: {
-  termino: string;
-  valor: string;
-  alerta?: boolean;
-}) => (
-  <div>
-    <p className="k-meta mb-1">{termino.toUpperCase()}</p>
-    <p className={`k-prueba text-lg ${alerta ? "text-[--color-mal]" : "text-[--color-marfil]"}`}>
-      {valor}
-    </p>
-  </div>
-);

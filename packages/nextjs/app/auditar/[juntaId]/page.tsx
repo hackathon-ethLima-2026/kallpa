@@ -16,12 +16,10 @@
 import { use } from "react";
 import Link from "next/link";
 import { Isotipo, Marca, RuedaDeJunta } from "~~/components/kallpa/Isotipo";
+import { mUSDC } from "~~/components/kallpa/cifras";
 import { useDeployedContractInfo, useScaffoldReadContract } from "~~/hooks/scaffold-eth";
 import { useTargetNetwork } from "~~/hooks/scaffold-eth/useTargetNetwork";
 import { getBlockExplorerAddressLink } from "~~/utils/scaffold-stylus";
-
-const mUSDC = (v: bigint | undefined) =>
-  v === undefined ? "—" : (Number(v) / 1e6).toLocaleString("es-PE", { maximumFractionDigits: 2 });
 
 export default function Auditar({ params }: { params: Promise<{ juntaId: string }> }) {
   const { juntaId } = use(params);
@@ -207,6 +205,11 @@ const Cifra = ({
   </div>
 );
 
+/**
+ * Se ve igual que el `Dato` compartido pero no es el mismo, y la diferencia importa: aquí los
+ * datos viven dentro de un `<dl>`, así que van en `<dt>`/`<dd>`. Un lector de pantalla
+ * anuncia esta lista como pares término-valor; con dos `<p>` sueltos anunciaría prosa.
+ */
 const Dato = ({ termino, valor }: { termino: string; valor: string }) => (
   <div>
     <dt className="k-meta mb-1">{termino.toUpperCase()}</dt>
