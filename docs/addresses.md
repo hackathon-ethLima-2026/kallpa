@@ -3,25 +3,25 @@
 Entregable oficial del hackathon.
 
 **Red:** Arbitrum Sepolia · chainId **421614** · explorador `https://sepolia.arbiscan.io`
-**Desplegado:** 3 de agosto de 2026 · desde `0x5951Af7ab044c21dFC862CbF85F947657610bdB9`
+**Desplegado:** 3 de agosto de 2026 (última versión) · desde `0x5951Af7ab044c21dFC862CbF85F947657610bdB9`
 
 ## Contratos
 
 | Contrato | Dirección | Arbiscan |
 |---|---|---|
-| `mock_usdc` | `0x59f60cbebb1c80aadba60e32f62db15793ef31d1` | [ver](https://sepolia.arbiscan.io/address/0x59f60cbebb1c80aadba60e32f62db15793ef31d1) |
-| `junta` | `0xe9827da24e746a68df6f812799f9673e539e4fbb` | [ver](https://sepolia.arbiscan.io/address/0xe9827da24e746a68df6f812799f9673e539e4fbb) |
-| `score_engine` | `0x7f7de18a87ee4e855dd35fe7733a6a2b8ceb5ba4` | [ver](https://sepolia.arbiscan.io/address/0x7f7de18a87ee4e855dd35fe7733a6a2b8ceb5ba4) |
-| `pool` | `0x0e50bf501abafe781736a560215c706534a3a65d` | [ver](https://sepolia.arbiscan.io/address/0x0e50bf501abafe781736a560215c706534a3a65d) |
+| `mock_usdc` | `0x241f74fed26ad33fc5de7d3197d56f14824139da` | [ver](https://sepolia.arbiscan.io/address/0x241f74fed26ad33fc5de7d3197d56f14824139da) |
+| `junta` | `0x66eb72055b8eba05fec5f221eb0c8b58814fb3a8` | [ver](https://sepolia.arbiscan.io/address/0x66eb72055b8eba05fec5f221eb0c8b58814fb3a8) |
+| `score_engine` | `0x6b6f385246672c6eb8defb7c4debcb4f1bd45158` | [ver](https://sepolia.arbiscan.io/address/0x6b6f385246672c6eb8defb7c4debcb4f1bd45158) |
+| `pool` | `0x9e1a4a0f4653457bf8c7032a78f6735489b67c75` | [ver](https://sepolia.arbiscan.io/address/0x9e1a4a0f4653457bf8c7032a78f6735489b67c75) |
 
 ### Transacciones de despliegue
 
 | Contrato | Transacción |
 |---|---|
-| `mock_usdc` | [`0xaf4f4238…eed14`](https://sepolia.arbiscan.io/tx/0xaf4f4238e29e01c48148bba4ea31d4af5fc7d52c645a3c6e37828bb542beed14) |
-| `junta` | [`0x98d3b219…f4090a`](https://sepolia.arbiscan.io/tx/0x98d3b219a6d7376232ca3f8d6a5bcad81244f21afabb4f95625a0229acf4090a) |
-| `score_engine` | [`0xd2c77a29…1ae707`](https://sepolia.arbiscan.io/tx/0xd2c77a299116af256e31f06949a60856a5d2f288bf77c1fa19bef3c6211ae707) |
-| `pool` | [`0xf6d329e0…20ce76`](https://sepolia.arbiscan.io/tx/0xf6d329e0ec83be34b2377ef93c2b4fd9bc9ffe1f39bb0443d9ef7d8f7620ce76) |
+| `mock_usdc` | [`0xaf4f4238…eed14`](https://sepolia.arbiscan.io/tx/0x237cf5cc4455b8475589cda070837d80fce3603e7194787f29ea10bac7978810) |
+| `junta` | [`0xe3cc1b6e…d5fcdc`](https://sepolia.arbiscan.io/tx/0xe3cc1b6e025d1d471330f9f23d88d5428144fb2a5fe4d610cf9e7053ddd5fcdc) |
+| `score_engine` | [`0x0a917202…df85fd`](https://sepolia.arbiscan.io/tx/0x0a9172021d6d174f993a1f4670fcb3590db287303d4bb5cee8de65f39edf85fd) |
+| `pool` | [`0x336e9061…3461bc`](https://sepolia.arbiscan.io/tx/0x336e9061e327e4d46ed3386176282a9a7d0990b9921908f8c14049bd0f3461bc) |
 
 ## Cableado, verificado contra la cadena
 
@@ -75,42 +75,40 @@ Sembrada con `packages/stylus/scripts/seed_demo.mjs`. Las dos juntas están **co
 que su historial ya no vuelve a moverse: se pueden mostrar cuando sea sin que nada se degrade.
 
 Los ocho miembros son cuentas de verdad, derivadas de una semilla fija — volver a sembrar
-produce siempre las mismas direcciones. Cada una firma sus propios depósitos, porque la
-cuota se acredita a quien la envía.
+produce siempre las mismas direcciones. Cada una firma sus propios depósitos, porque la cuota
+se acredita a quien la envía.
 
 ### La misma persona, dos juntas, resultados opuestos
 
-Es el argumento entero del proyecto en una sola comparación: el score no mira quién eres,
-mira lo que hiciste.
+Es el argumento entero del proyecto en una comparación: el score no mira quién eres, mira lo
+que hiciste. Ambas juntas tienen los mismos ocho miembros y la misma cuota.
 
-| | Junta #1 · Las Emprendedoras | Junta #2 · Los del Mercado |
+| | Junta #0 · Las Emprendedoras | Junta #1 · Los del Mercado |
 |---|---|---|
 | Qué hizo María | pagó sus ocho cuotas | cobró el pozo y dejó de aportar |
 | Cumplimiento | 100% | 12.5% |
-| Pagos puntuales | 8 | 1 |
 | Incumplimientos | 0 | 7 |
 | **Mora posterior al cobro** | 0 | **7** |
 | **Score** | **1000** | **194** |
 | **Crédito** | **200 mUSDC** | **SUSPENDIDO** |
 
-Nadie declaró nada para que el segundo caso se cerrara. María cobró su turno y dejó de
-pagar; el resto lo hizo el reloj de la cadena.
+Nadie declaró nada para que el segundo caso se cerrara. María cobró su turno y dejó de pagar;
+el resto lo hizo el reloj de la cadena.
 
 ### Transacciones
 
 | Qué | Transacción |
 |---|---|
-| María cobra el pozo (junta #2) | [`0xdc9cbc4f…eb09e3`](https://sepolia.arbiscan.io/tx/0xdc9cbc4f7374f92b6f4cf815bbeef7f1408082eb505e056898b0d873b8eb09e3) |
-| **Score en cadena · junta #1** | [`0xd5b3a918…032646`](https://sepolia.arbiscan.io/tx/0xd5b3a918573a6901524ce4a7a436e42e6a3ae04eed482275424bf643ab032646) |
-| **Score en cadena · junta #2** | [`0x62059622…d9180e`](https://sepolia.arbiscan.io/tx/0x62059622c1b3b9918269d771cf94963a2dcd030483414043f12984ff58d9180e) |
+| **Score en cadena · junta #0** | [`0x6b41edff…d12d6b`](https://sepolia.arbiscan.io/tx/0x6b41edff9dc3d8b79e84503674c4b7f7897208190b0c118314a773cb4cd12d6b) |
+| **Score en cadena · junta #1** | [`0x89389262…3568ff`](https://sepolia.arbiscan.io/tx/0x893892625ee1d490c1710948bab9bc15e791537655f568dc6eb328bdad3568ff) |
 
-**Gas de `record_score` con historial completo: 150 337.** Cubre leer el historial de otro
+**Gas de `record_score` con historial completo: 157 169.** Cubre leer el historial de otro
 contrato, correr el modelo en aritmética de punto fijo, escribir el resultado y emitir el
 evento. Es un número medido, no estimado.
 
 ### El score se reproduce fuera de la cadena
 
-Los dos vectores, tal como los devolvió la Junta desplegada, pasados por
+Los vectores tal como los devuelve la Junta desplegada, pasados por
 `packages/ai-model/fixed_point.py`:
 
 | Vector leído de la cadena | Contrato | Python |
@@ -118,15 +116,14 @@ Los dos vectores, tal como los devolvió la Junta desplegada, pasados por
 | `[1000000, 8, 0, 0, 0, 0, 8, 0]` | 1000 | **1000** |
 | `[125000, 1, 0, 7, 0, 7, 8, 0]` | 194 | **194** |
 
-Idénticos. Cualquiera puede repetir la comprobación sin pedirle permiso ni confianza a nadie,
-que es precisamente lo que hace que la afirmación se sostenga.
+Idénticos. Cualquiera puede repetir la comprobación sin pedirle permiso ni confianza a nadie.
 
 ### Integridad de la caja
 
 ```
-aportado 3 650 000 000 − distribuido 3 600 000 000 = 50 000 000
-saldo real del token en el contrato: 50 000 000        →  CUADRA ✓
+aportado 3 600 000 000 − distribuido 3 600 000 000 = 0
+saldo real del token en el contrato: 0        →  CUADRA ✓
 ```
 
-Los 50 mUSDC que quedan son la cuota que María aportó a la junta #2 antes de cobrar: entró a
-la caja y todavía no salió, porque los turnos restantes de esa junta no se repartieron.
+Las dos juntas repartieron todo lo que recibieron, así que el contrato no retiene nada. La
+identidad se sostiene igual cuando la caja está vacía que cuando está llena.
