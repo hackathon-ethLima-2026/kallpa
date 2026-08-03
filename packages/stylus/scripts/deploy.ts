@@ -1,5 +1,6 @@
 import deployStylusContract from "./deploy_contract";
 import {
+  getContractDataFromDeployments,
   getDeploymentConfig,
   getRpcUrlFromChain,
   printDeployedAddresses,
@@ -15,55 +16,87 @@ if (fs.existsSync(envPath)) {
 }
 
 /**
- * Define your deployment logic here
+ * Despliega los cuatro contratos de Kallpa en orden de dependencias.
+ *
+ * Stylus despliega un contrato por transacción, así que "de una vez" significa un solo
+ * comando y no una sola transacción. El orden importa: cada contrato recibe en su
+ * constructor la dirección del anterior, y esa dirección solo existe una vez desplegado.
+ *
+ *   mock_usdc  →  junta(token)  →  score_engine(junta)  →  pool(token, score_engine)
+ *
+ * El Pool no necesita la dirección de EAS: decide recomputando el score, no leyendo una
+ * attestation.
  */
 export default async function deployScript(deployOptions: DeployOptions) {
   const config = getDeploymentConfig(deployOptions);
+  const chainId = config.chain.id.toString();
 
-  console.log(`📡 Using endpoint: ${getRpcUrlFromChain(config.chain)}`);
-  if (config.chain) {
-    console.log(`🌐 Network: ${config.chain?.name}`);
-    console.log(`🔗 Chain ID: ${config.chain?.id}`);
-  }
-  console.log(`🔑 Using private key: ${config.privateKey.substring(0, 10)}...`);
-  console.log(`📁 Deployment directory: ${config.deploymentDir}`);
-  console.log(`\n`);
+  console.log(`📡 Endpoint: ${getRpcUrlFromChain(config.chain)}`);
+  console.log(
+    `🌐 Red: ${config.chain?.name}  ·  Chain ID: ${config.chain?.id}`,
+  );
+  console.log(`🔑 Desplegando desde: ${config.deployerAddress}`);
+  console.log(`📁 Directorio de despliegues: ${config.deploymentDir}\n`);
 
-  // Deploy a contract. Each deployStylusContract() call deploys ONE contract
-  // (its own tx + address) and, on success, automatically:
-  // 1. saves the address/tx to packages/stylus/deployments/
-  // 2. runs 'cargo stylus export-abi' and writes the ABI + address into
-  //    packages/nextjs/contracts/deployedContracts.ts (keyed by chainId + name),
-  //    so the Next.js frontend picks it up immediately.
+  /** La dirección de un contrato ya desplegado en esta misma corrida. */
+  const direccionDe = (contrato: string): string => {
+    const datos = getContractDataFromDeployments(
+      config.deploymentDir,
+      contrato,
+      chainId,
+    );
+    if (!datos?.address) {
+      throw new Error(
+        `No se encontró la dirección de '${contrato}'. Los contratos se despliegan en ` +
+          `orden de dependencias y este debía estar antes.`,
+      );
+    }
+    return datos.address;
+  };
+
+  // 1. El dinero de la demo. No tiene constructor.
+  console.log("── 1/4  mock_usdc ──────────────────────────────────────");
   await deployStylusContract({
-    contract: "your-contract", // folder name under packages/stylus/contracts/
-    constructorArgs: [config.deployerAddress!], // omit/empty if the contract has no #[constructor]
+    contract: "mock_usdc",
     ...deployOptions,
   });
-  // ─── Deploying MULTIPLE contracts ─────────────────────────────────────────
-  // 1. Scaffold each new contract: yarn new-module <name>
-  //    (creates packages/stylus/contracts/<name>/ and auto-registers it via members=["*"])
-  // 2. Add one deployStylusContract() call per contract below. They deploy
-  //    sequentially in a single 'yarn deploy', and each is auto-added to
-  //    deployedContracts.ts. (Stylus deploys one contract per tx/address — there is
-  //    no single-tx multi-deploy; 'at once' means one command, not one transaction.)
-  //
-  // await deployStylusContract({
-  //   contract: "counter",
-  //   constructorArgs: ["42", config.deployerAddress!, true],
-  //   pass your #[constructor] args in order
-  //   ...deployOptions,
-  // });
-  //
-  // Deploy the SAME crate again under a different key using 'name':
-  // await deployStylusContract({
-  //   contract: "your-contract",
-  //   name: "your-contract-v2",
-  //   constructorArgs: [config.deployerAddress!],
-  //   ...deployOptions,
-  // });
+  const token = direccionDe("mock_usdc");
 
-  // Print the deployed addresses
+  // 2. La custodia y la fuente de verdad. Necesita saber en qué token cobra.
+  console.log("\n── 2/4  junta ──────────────────────────────────────────");
+  await deployStylusContract({
+    contract: "junta",
+    constructorArgs: [token],
+    ...deployOptions,
+  });
+  const junta = direccionDe("junta");
+
+  // 3. El modelo de crédito. Lee el historial de la Junta, así que la necesita cableada.
+  console.log("\n── 3/4  score_engine ───────────────────────────────────");
+  await deployStylusContract({
+    contract: "score_engine",
+    constructorArgs: [junta],
+    ...deployOptions,
+  });
+  const scoreEngine = direccionDe("score_engine");
+
+  // 4. El crédito. Paga en el token y consulta al motor en el momento de decidir.
+  console.log("\n── 4/4  pool ───────────────────────────────────────────");
+  await deployStylusContract({
+    contract: "pool",
+    constructorArgs: [token, scoreEngine],
+    ...deployOptions,
+  });
+
   console.log("\n\n");
-  printDeployedAddresses(config.deploymentDir, config.chain.id.toString());
+  printDeployedAddresses(config.deploymentDir, chainId);
+
+  console.log("\n📋 Cableado entre contratos:");
+  console.log(`   junta.token        = ${token}`);
+  console.log(`   score_engine.junta = ${junta}`);
+  console.log(`   pool.token         = ${token}`);
+  console.log(`   pool.scoreEngine   = ${scoreEngine}`);
+  console.log(
+    "\n👉 Copia estas direcciones a docs/addresses.md — es un entregable del hackathon.",
+  );
 }
