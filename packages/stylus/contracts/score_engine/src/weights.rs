@@ -17,14 +17,14 @@ pub const MODEL_HASH: &str = "0x9664441e2342982ac11dab05b4ac95752f480eda32150983
 
 /// Peso de cada señal, en el orden del §6.1.
 pub const PESOS: [i128; 8] = [
-    -6279283,       // tasa_cumplimiento: -6.2793 (menos riesgo)
-    -2045790,       // pagos_puntuales: -2.0458 (menos riesgo)
-    -421616,        // pagos_atrasados: -0.4216 (menos riesgo)
-    2224375,        // defaults: +2.2244 (más riesgo)
-    1034950,        // atraso_max_periodos: +1.0349 (más riesgo)
-    2999416,        // defaults_tras_cobro: +2.9994 (más riesgo)
-    -243031,        // antiguedad_periodos: -0.2430 (menos riesgo)
-    1815898,        // disputas_perdidas: +1.8159 (más riesgo)
+    -6279283, // tasa_cumplimiento: -6.2793 (menos riesgo)
+    -2045790, // pagos_puntuales: -2.0458 (menos riesgo)
+    -421616,  // pagos_atrasados: -0.4216 (menos riesgo)
+    2224375,  // defaults: +2.2244 (más riesgo)
+    1034950,  // atraso_max_periodos: +1.0349 (más riesgo)
+    2999416,  // defaults_tras_cobro: +2.9994 (más riesgo)
+    -243031,  // antiguedad_periodos: -0.2430 (menos riesgo)
+    1815898,  // disputas_perdidas: +1.8159 (más riesgo)
 ];
 
 /// Sesgo del modelo (+1.7360).

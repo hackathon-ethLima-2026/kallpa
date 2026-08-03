@@ -102,6 +102,10 @@ sol! {
     error ParametrosInvalidos();
     #[derive(Debug)]
     error TransferenciaFallida();
+    #[derive(Debug)]
+    error NoPuedeReportarseASiMismo(uint32 juntaId, address quien);
+    #[derive(Debug)]
+    error YaReporto(uint32 juntaId, address reportante, address member);
 }
 
 #[derive(SolidityError, Debug)]
@@ -113,6 +117,8 @@ pub enum JuntaError {
     TurnoNoVencido(TurnoNoVencido),
     ParametrosInvalidos(ParametrosInvalidos),
     TransferenciaFallida(TransferenciaFallida),
+    NoPuedeReportarseASiMismo(NoPuedeReportarseASiMismo),
+    YaReporto(YaReporto),
 }
 
 sol_storage! {
@@ -143,6 +149,12 @@ sol_storage! {
         uint256 distribuido;
         address[] miembros;
         mapping(address => MemberState) estado;
+        // Quién ya reportó a quién. Sin esta huella un solo miembro satura la señal él
+        // solo —cinco reportes son el tope del dominio del modelo— y la señal existe para
+        // expresar el juicio del grupo, no el de una dirección (ADR-0013). Vive dentro de
+        // la junta porque el historial es del par (junta, miembro): quien reportó aquí
+        // conserva intacto su reporte en cualquier otra junta que compartan.
+        mapping(address => mapping(address => bool)) reportes;
     }
 
     #[entrypoint]
@@ -467,28 +479,58 @@ impl Junta {
 
     /// Registra una disputa resuelta en contra del miembro. Es la única señal negativa que
     /// necesita que alguien la reporte, porque no se puede derivar de un reloj.
+    ///
+    /// Y por ser la única que alguien escribe a mano, es la única que alguien puede
+    /// fabricar. Tres guardas la atan al juicio del grupo (ADR-0013): reporta solo quien
+    /// comparte la junta con el reportado, nadie se reporta a sí mismo, y cada reportante
+    /// cuenta una sola vez por reportado. La tercera es la que cierra el ataque: cinco
+    /// reportes saturan el dominio de la señal y le cuestan a la víctima unos 151 puntos
+    /// de score —de sobra para dejarla sin crédito—, así que sin ella una sola dirección
+    /// decide sola, y el precio del ataque es el gas.
     pub fn report_dispute(&mut self, junta_id: u32, member: Address) -> Result<(), JuntaError> {
-        if !self.juntas.get(U32::from(junta_id)).existe.get() {
+        let reportante = self.vm().msg_sender();
+        let j = self.juntas.get(U32::from(junta_id));
+        if !j.existe.get() {
             return Err(JuntaError::JuntaNoExiste(JuntaNoExiste {
                 juntaId: junta_id,
             }));
         }
-        if !self
-            .juntas
-            .get(U32::from(junta_id))
-            .estado
-            .get(member)
-            .es_miembro
-            .get()
-        {
+        // El error señala al llamante y no al reportado: quien no pertenece a la junta no
+        // presenció nada, así que lo que está mal es quién habla, no de quién habla.
+        if !j.estado.get(reportante).es_miembro.get() {
+            return Err(JuntaError::NoEsMiembro(NoEsMiembro {
+                juntaId: junta_id,
+                quien: reportante,
+            }));
+        }
+        // Reportarse a uno mismo no es un ataque, es un sinsentido: una disputa la pierde
+        // alguien contra alguien. Se rechaza antes de tocar el registro para que el
+        // atacante no pueda gastar su propio cupo y quedar "limpio".
+        if reportante == member {
+            return Err(JuntaError::NoPuedeReportarseASiMismo(
+                NoPuedeReportarseASiMismo {
+                    juntaId: junta_id,
+                    quien: reportante,
+                },
+            ));
+        }
+        if !j.estado.get(member).es_miembro.get() {
             return Err(JuntaError::NoEsMiembro(NoEsMiembro {
                 juntaId: junta_id,
                 quien: member,
             }));
         }
+        if j.reportes.get(reportante).get(member) {
+            return Err(JuntaError::YaReporto(YaReporto {
+                juntaId: junta_id,
+                reportante,
+                member,
+            }));
+        }
 
         let total = {
             let mut j = self.juntas.setter(U32::from(junta_id));
+            j.reportes.setter(reportante).setter(member).set(true);
             let mut e = j.estado.setter(member);
             let n = e.disputas_perdidas.get().to::<u32>() + 1;
             e.disputas_perdidas.set(U32::from(n));
@@ -699,6 +741,17 @@ impl Junta {
             e.ya_cobro.get(),
             ciclos.saturating_sub(pagadas),
         )
+    }
+
+    /// Si `reportante` ya reportó a `member` dentro de esta junta.
+    ///
+    /// Existe para la interfaz. El segundo reporte revierte, y una aplicación que no puede
+    /// preguntarlo antes solo sabe ofrecer un botón que falla: el usuario paga gas para
+    /// enterarse de una regla que el contrato ya conocía.
+    pub fn ya_reporto(&self, junta_id: u32, reportante: Address, member: Address) -> bool {
+        let j = self.juntas.get(U32::from(junta_id));
+        let suyos = j.reportes.get(reportante);
+        suyos.get(member)
     }
 
     /// Los miembros de una junta, en el orden de turno.

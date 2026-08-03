@@ -8,6 +8,11 @@
  * un contrato pueda cobrar, así que pagar son dos transacciones y no una. En vez de esconder
  * ese detalle o mostrar dos botones sin explicación, la pantalla lo dice: primero autorizas
  * una vez, después pagas las veces que haga falta.
+ *
+ * La lista de miembros es también el único lugar donde el grupo puede hablar. De las ocho
+ * señales que miran el score, siete salen de un depósito o del reloj de la cadena; la disputa
+ * es la única que alguien escribe a mano, porque un juicio no se deriva de un calendario. Sin
+ * esta pantalla esa señal existía en el contrato y no tenía boca.
  */
 
 import { use, useState } from "react";
@@ -249,33 +254,27 @@ export default function DetalleDeJunta({ params }: { params: Promise<{ juntaId: 
           {/* ── Quiénes son ──────────────────────────────────────────────────────── */}
           <div className="k-tarjeta p-8">
             <p className="k-rotulo mb-4">Miembros y turnos</p>
+            {esMiembro && (
+              <p className="mb-5 max-w-2xl text-sm leading-relaxed text-[--color-gris]">
+                Si alguien del grupo dejó de cumplir, aquí lo puedes reportar. Léelo con calma antes de hacerlo: no es
+                una queja, es una acusación que queda escrita.
+              </p>
+            )}
             <ul className="flex flex-col gap-1">
-              {(listaMiembros ?? []).map((m, i) => {
-                const cobro = i < turnoActual;
-                const leToca = i === turnoActual && !terminada;
-                return (
-                  <li
-                    key={m}
-                    className={`flex items-center justify-between gap-3 rounded-[4px] px-3 py-2.5 ${
-                      leToca ? "bg-[--color-noche]" : ""
-                    }`}
-                  >
-                    <span className="flex items-center gap-3">
-                      <span
-                        className="inline-block h-3 w-3 shrink-0 rounded-full"
-                        style={{
-                          background: cobro ? "#F0B429" : "transparent",
-                          border: cobro ? "none" : "1.5px solid #F0B429",
-                        }}
-                      />
-                      <Address address={m} size="sm" />
-                    </span>
-                    <span className="k-prueba text-xs text-[--color-gris]">
-                      {cobro ? "cobró" : leToca ? "le toca" : `turno ${i + 1}º`}
-                    </span>
-                  </li>
-                );
-              })}
+              {(listaMiembros ?? []).map((m, i) => (
+                <MiembroDeLaJunta
+                  key={m}
+                  juntaId={id}
+                  miembro={m}
+                  turno={i}
+                  turnoActual={turnoActual}
+                  terminada={terminada}
+                  // Solo reporta quien comparte la junta con el reportado: quien no pertenece
+                  // no presenció nada. Sin billetera o sin ser miembro, la fila es de solo
+                  // lectura y ni siquiera consulta si ya reportó.
+                  reportante={esMiembro ? address : undefined}
+                />
+              ))}
             </ul>
           </div>
         </div>
@@ -304,3 +303,121 @@ export default function DetalleDeJunta({ params }: { params: Promise<{ juntaId: 
     </Marco>
   );
 }
+
+/**
+ * Un miembro en la lista, con la única acción que un miembro ejerce sobre otro.
+ *
+ * Cada fila pregunta por su cuenta si ya reportó a esa persona, igual que el selector de
+ * juntas lee su propio nombre. Consultarlo antes de ofrecer el botón no es un lujo: el
+ * contrato ya conoce la regla, y sin la consulta el usuario pagaría gas para enterarse de
+ * ella.
+ *
+ * La confirmación es de dos pasos a propósito. Un reporte no se puede retirar —devolverle el
+ * cupo al reportante sería devolverle el ataque: reportar, retirar, reportar— así que se
+ * escribe entero antes de firmar lo que significa y lo que cuesta.
+ */
+const MiembroDeLaJunta = ({
+  juntaId,
+  miembro,
+  turno,
+  turnoActual,
+  terminada,
+  reportante,
+}: {
+  juntaId: number;
+  miembro: string;
+  turno: number;
+  turnoActual: number;
+  terminada: boolean;
+  /** Quién está mirando la lista, si es que puede reportar. */
+  reportante: string | undefined;
+}) => {
+  const [confirmando, setConfirmando] = useState(false);
+  const [reportando, setReportando] = useState(false);
+
+  // Nadie se reporta a sí mismo. No es un ataque, es un sinsentido: una disputa la pierde
+  // alguien contra alguien.
+  const puedeReportar = reportante !== undefined && reportante.toLowerCase() !== miembro.toLowerCase();
+
+  const { data: yaReportado, refetch: releerReporte } = useScaffoldReadContract({
+    contractName: "junta",
+    functionName: "yaReporto",
+    args: [juntaId, puedeReportar ? reportante : undefined, miembro],
+  });
+
+  const { writeContractAsync: escribirJunta } = useScaffoldWriteContract({ contractName: "junta" });
+
+  const cobro = turno < turnoActual;
+  const leToca = turno === turnoActual && !terminada;
+
+  const reportar = async () => {
+    try {
+      setReportando(true);
+      await escribirJunta({ functionName: "reportDispute", args: [juntaId, miembro] });
+      await releerReporte();
+      setConfirmando(false);
+    } finally {
+      setReportando(false);
+    }
+  };
+
+  return (
+    <li className={`rounded-[4px] px-3 py-2.5 ${leToca ? "bg-[--color-noche]" : ""}`}>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <span className="flex items-center gap-3">
+          <span
+            className="inline-block h-3 w-3 shrink-0 rounded-full"
+            style={{
+              background: cobro ? "#F0B429" : "transparent",
+              border: cobro ? "none" : "1.5px solid #F0B429",
+            }}
+          />
+          <Address address={miembro} size="sm" />
+        </span>
+        <span className="flex items-center gap-4">
+          <span className="k-prueba text-xs text-[--color-gris]">
+            {cobro ? "cobró" : leToca ? "le toca" : `turno ${turno + 1}º`}
+          </span>
+          {puedeReportar && !confirmando && (
+            <button
+              className="k-meta enabled:hover:text-[--color-oro] disabled:cursor-not-allowed disabled:opacity-50"
+              onClick={() => setConfirmando(true)}
+              disabled={yaReportado === true}
+              title={
+                yaReportado === true
+                  ? "Ya reportaste a esta persona en esta junta. Cada miembro cuenta una sola vez."
+                  : undefined
+              }
+            >
+              {yaReportado === true ? "YA LO REPORTASTE" : "REPORTAR INCUMPLIMIENTO"}
+            </button>
+          )}
+        </span>
+      </div>
+
+      {confirmando && (
+        <div className="mt-4 border-l-2 border-[--color-mal] pl-4">
+          <p className="k-voz mb-2 text-[15px] font-bold">Vas a acusar a esta persona de incumplir</p>
+          <p className="max-w-xl text-sm leading-relaxed text-[--color-gris]">
+            Esto no es un botón de <span className="k-corazon text-[--color-marfil]">no me cae bien</span>. Es una
+            acusación de incumplimiento: queda escrita en la cadena con tu dirección al lado, le baja el score y puede
+            dejar a esta persona sin crédito. No se puede retirar, igual que pagar tarde no deja de haber sido tarde.
+          </p>
+          <p className="mt-3 max-w-xl text-sm leading-relaxed text-[--color-gris]">
+            Cuentas <span className="text-[--color-marfil]">una sola vez</span>. Puedes reportarla hoy y nunca más, y
+            eso es justamente lo que hace creíble la señal: no mide cuántas veces alguien apretó un botón, mide a cuánta
+            gente convenciste.
+          </p>
+          <div className="mt-5 flex flex-wrap gap-3">
+            <button className="k-boton" onClick={reportar} disabled={reportando}>
+              {reportando ? "Reportando…" : "Sí, reportar el incumplimiento"}
+            </button>
+            <button className="k-boton-borde" onClick={() => setConfirmando(false)} disabled={reportando}>
+              Mejor no
+            </button>
+          </div>
+        </div>
+      )}
+    </li>
+  );
+};

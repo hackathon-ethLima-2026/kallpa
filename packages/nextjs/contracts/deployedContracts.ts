@@ -7,9 +7,9 @@ import { GenericContractsDeclaration } from "../utils/scaffold-eth/contract";
 const deployedContracts = {
   "421614": {
     mock_usdc: {
-      address: "0x241f74fed26ad33fc5de7d3197d56f14824139da",
+      address: "0x2412724a112cdde1319d54e378e660a68f490211",
       txHash:
-        "0x237cf5cc4455b8475589cda070837d80fce3603e7194787f29ea10bac7978810",
+        "0x0db221effea73f02f03116a236b605e7aaacef01fad666146e50a72fb334779c",
       abi: [
         {
           inputs: [
@@ -262,9 +262,9 @@ const deployedContracts = {
       ],
     },
     junta: {
-      address: "0x66eb72055b8eba05fec5f221eb0c8b58814fb3a8",
+      address: "0x16b5005e204f7e9143e5138462fa82e64acb4c3a",
       txHash:
-        "0xe3cc1b6e025d1d471330f9f23d88d5428144fb2a5fe4d610cf9e7053ddd5fcdc",
+        "0xc9c613e5739c58e55f9870dc65a6af21f75213cebb7f42cbce864a51442a7158",
       abi: [
         {
           inputs: [
@@ -321,6 +321,22 @@ const deployedContracts = {
           type: "error",
         },
         {
+          inputs: [
+            {
+              internalType: "uint32",
+              name: "",
+              type: "uint32",
+            },
+            {
+              internalType: "address",
+              name: "",
+              type: "address",
+            },
+          ],
+          name: "NoPuedeReportarseASiMismo",
+          type: "error",
+        },
+        {
           inputs: [],
           name: "ParametrosInvalidos",
           type: "error",
@@ -344,6 +360,27 @@ const deployedContracts = {
             },
           ],
           name: "TurnoNoVencido",
+          type: "error",
+        },
+        {
+          inputs: [
+            {
+              internalType: "uint32",
+              name: "",
+              type: "uint32",
+            },
+            {
+              internalType: "address",
+              name: "",
+              type: "address",
+            },
+            {
+              internalType: "address",
+              name: "",
+              type: "address",
+            },
+          ],
+          name: "YaReporto",
           type: "error",
         },
         {
@@ -756,13 +793,58 @@ const deployedContracts = {
           stateMutability: "view",
           type: "function",
         },
+        {
+          inputs: [
+            {
+              internalType: "uint32",
+              name: "junta_id",
+              type: "uint32",
+            },
+            {
+              internalType: "address",
+              name: "reportante",
+              type: "address",
+            },
+            {
+              internalType: "address",
+              name: "member",
+              type: "address",
+            },
+          ],
+          name: "yaReporto",
+          outputs: [
+            {
+              internalType: "bool",
+              name: "",
+              type: "bool",
+            },
+          ],
+          stateMutability: "view",
+          type: "function",
+        },
       ],
     },
     score_engine: {
-      address: "0x6b6f385246672c6eb8defb7c4debcb4f1bd45158",
+      address: "0x24ba77e0d24a93e049acd63cad74312476ac1413",
       txHash:
-        "0x0a9172021d6d174f993a1f4670fcb3590db287303d4bb5cee8de65f39edf85fd",
+        "0x60470e931023d5ab3fdcd80c39269fabe6f3bc09aa459fcefeb330caaa04aacb",
       abi: [
+        {
+          inputs: [
+            {
+              internalType: "uint32",
+              name: "",
+              type: "uint32",
+            },
+            {
+              internalType: "address",
+              name: "",
+              type: "address",
+            },
+          ],
+          name: "AttestationFallida",
+          type: "error",
+        },
         {
           inputs: [
             {
@@ -778,6 +860,41 @@ const deployedContracts = {
           ],
           name: "LecturaDeJuntaFallida",
           type: "error",
+        },
+        {
+          inputs: [
+            {
+              internalType: "address",
+              name: "",
+              type: "address",
+            },
+          ],
+          name: "ListaDeJuntasFallida",
+          type: "error",
+        },
+        {
+          inputs: [
+            {
+              internalType: "uint32",
+              name: "junta_id",
+              type: "uint32",
+            },
+            {
+              internalType: "address",
+              name: "member",
+              type: "address",
+            },
+          ],
+          name: "attest",
+          outputs: [
+            {
+              internalType: "bytes32",
+              name: "",
+              type: "bytes32",
+            },
+          ],
+          stateMutability: "nonpayable",
+          type: "function",
         },
         {
           inputs: [
@@ -798,6 +915,19 @@ const deployedContracts = {
               internalType: "uint16",
               name: "",
               type: "uint16",
+            },
+          ],
+          stateMutability: "view",
+          type: "function",
+        },
+        {
+          inputs: [],
+          name: "eas",
+          outputs: [
+            {
+              internalType: "address",
+              name: "",
+              type: "address",
             },
           ],
           stateMutability: "view",
@@ -835,6 +965,30 @@ const deployedContracts = {
               internalType: "address",
               name: "",
               type: "address",
+            },
+          ],
+          stateMutability: "view",
+          type: "function",
+        },
+        {
+          inputs: [
+            {
+              internalType: "uint32",
+              name: "junta_id",
+              type: "uint32",
+            },
+            {
+              internalType: "address",
+              name: "member",
+              type: "address",
+            },
+          ],
+          name: "latestAttestation",
+          outputs: [
+            {
+              internalType: "bytes32",
+              name: "",
+              type: "bytes32",
             },
           ],
           stateMutability: "view",
@@ -925,6 +1079,19 @@ const deployedContracts = {
           type: "function",
         },
         {
+          inputs: [],
+          name: "schemaUid",
+          outputs: [
+            {
+              internalType: "bytes32",
+              name: "",
+              type: "bytes32",
+            },
+          ],
+          stateMutability: "view",
+          type: "function",
+        },
+        {
           inputs: [
             {
               internalType: "uint32",
@@ -954,6 +1121,35 @@ const deployedContracts = {
           type: "function",
         },
         {
+          inputs: [
+            {
+              internalType: "address",
+              name: "member",
+              type: "address",
+            },
+          ],
+          name: "scoreGlobal",
+          outputs: [
+            {
+              internalType: "uint16",
+              name: "",
+              type: "uint16",
+            },
+            {
+              internalType: "bool",
+              name: "",
+              type: "bool",
+            },
+            {
+              internalType: "uint32",
+              name: "",
+              type: "uint32",
+            },
+          ],
+          stateMutability: "view",
+          type: "function",
+        },
+        {
           inputs: [],
           name: "umbralPositivo",
           outputs: [
@@ -969,9 +1165,9 @@ const deployedContracts = {
       ],
     },
     pool: {
-      address: "0x9e1a4a0f4653457bf8c7032a78f6735489b67c75",
+      address: "0xfe2af4e49d4e99088e4225e42e288dac7f2cf963",
       txHash:
-        "0x336e9061e327e4d46ed3386176282a9a7d0990b9921908f8c14049bd0f3461bc",
+        "0xc565a61956669160c1b7d99a1119ba2f8d7aea34cea5a73bd7c3a8774150ba90",
       abi: [
         {
           inputs: [
@@ -1023,11 +1219,6 @@ const deployedContracts = {
         },
         {
           inputs: [
-            {
-              internalType: "uint32",
-              name: "",
-              type: "uint32",
-            },
             {
               internalType: "address",
               name: "",
@@ -1136,13 +1327,7 @@ const deployedContracts = {
           type: "function",
         },
         {
-          inputs: [
-            {
-              internalType: "uint32",
-              name: "junta_id",
-              type: "uint32",
-            },
-          ],
+          inputs: [],
           name: "requestLoan",
           outputs: [
             {

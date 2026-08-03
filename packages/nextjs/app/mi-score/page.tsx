@@ -10,13 +10,16 @@
  * sería el error que hunde a cualquier sistema de crédito. Por eso la pantalla separa el
  * veredicto del modelo del veredicto de la política, y dice cuál de los dos habló.
  *
- * El botón de registrar tampoco es adorno: consultar el score es una vista gratuita que no
- * deja rastro, así que si nadie lo escribe, no queda nada que un tercero pueda consultar
- * después.
+ * Los dos botones del final tampoco son adorno, y no hacen lo mismo: consultar el score es una
+ * vista gratuita que no deja rastro, así que si nadie lo escribe, no queda nada que un tercero
+ * pueda consultar después. Registrar lo escribe en NUESTRO contrato; la attestation lo publica
+ * en un registro que no es nuestro. La segunda es la que hace que la reputación sea del
+ * miembro y no de Kallpa, y por eso la pantalla gasta texto en separarlas.
  */
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
+import { type TransactionReceipt, decodeEventLog, parseAbiItem } from "viem";
 import { useAccount } from "wagmi";
 import { Cargando, Marco, PideBilletera, Titulo, Vacio } from "~~/components/kallpa/Marco";
 import { SelectorDeJunta, useNombreDeJunta } from "~~/components/kallpa/SelectorDeJunta";
@@ -34,6 +37,41 @@ const enCiclos = (v: bigint | undefined) => (v === undefined ? "—" : (Number(v
 const fechaLarga = (segundos: bigint) =>
   new Date(Number(segundos) * 1000).toLocaleString("es-PE", { dateStyle: "long", timeStyle: "short" });
 
+/**
+ * El evento que el Ethereum Attestation Service emite al crear una attestation.
+ *
+ * Se declara aquí y no se lee de ninguna ABI nuestra porque no es nuestro: lo emite el
+ * contrato de EAS, que ni siquiera sabe que existimos. La firma está comprobada contra la
+ * cadena en `docs/eas-arbitrum-sepolia.md`.
+ */
+const ATTESTED = parseAbiItem(
+  "event Attested(address indexed recipient, address indexed attester, bytes32 uid, bytes32 indexed schemaUID)",
+);
+
+/**
+ * El identificador de la attestation que produjo una transacción.
+ *
+ * Hay que sacarlo del recibo y no del valor de retorno: de una transacción minada solo se
+ * observan eventos y estado, así que el `bytes32` que devuelve `attest` no le llega a quien
+ * la envió. Tampoco se puede calcular por adelantado — el identificador depende del instante
+ * del bloque.
+ *
+ * Devuelve `undefined` sin quejarse si no encuentra el evento. Es una consecuencia de leer un
+ * contrato ajeno: la transacción sigue siendo válida y su enlace también, y perder el
+ * identificador no es motivo para esconder el comprobante.
+ */
+const uidDeLaAttestation = (recibo: TransactionReceipt) => {
+  for (const registro of recibo.logs) {
+    try {
+      const evento = decodeEventLog({ abi: [ATTESTED], data: registro.data, topics: registro.topics });
+      return evento.args.uid;
+    } catch {
+      // Otro evento de la misma transacción. Que no decodifique es lo normal, no un fallo.
+    }
+  }
+  return undefined;
+};
+
 export default function MiScore() {
   const { address } = useAccount();
   const { targetNetwork } = useTargetNetwork();
@@ -42,9 +80,11 @@ export default function MiScore() {
   // sin necesidad de un efecto que sincronice estado con datos que aún no llegaron.
   const [elegida, setElegida] = useState<number | null>(null);
   const [registrando, setRegistrando] = useState(false);
+  const [atestiguando, setAtestiguando] = useState(false);
   // El comprobante viaja junto a la junta que lo produjo: si cambias de pestaña, el enlace de
   // otra junta dejaría de significar lo que dice.
   const [comprobante, setComprobante] = useState<{ hash: string; junta: number } | null>(null);
+  const [attestation, setAttestation] = useState<{ hash: string; uid?: string; junta: number } | null>(null);
 
   const { data: misJuntas, isLoading: cargandoJuntas } = useScaffoldReadContract({
     contractName: "junta",
@@ -139,11 +179,11 @@ export default function MiScore() {
   const cargandoScore = veredicto === undefined || historial === undefined;
   const porcentajeBarra = Math.min(100, ((score ?? 0) / 1000) * 100);
   const porcentajeCorte = (corte / 1000) * 100;
-  const enlaceComprobante =
-    comprobante && comprobante.junta === juntaId
-      ? getBlockExplorerTxLink(targetNetwork.id, comprobante.hash) ||
-        `https://sepolia.arbiscan.io/tx/${comprobante.hash}`
-      : null;
+  const enlaceDeTx = (hash: string) =>
+    getBlockExplorerTxLink(targetNetwork.id, hash) || `https://sepolia.arbiscan.io/tx/${hash}`;
+
+  const enlaceComprobante = comprobante && comprobante.junta === juntaId ? enlaceDeTx(comprobante.hash) : null;
+  const laAttestation = attestation && attestation.junta === juntaId ? attestation : null;
 
   const registrar = async () => {
     if (juntaId === undefined || !address) return;
@@ -154,6 +194,33 @@ export default function MiScore() {
       await releerUltimo();
     } finally {
       setRegistrando(false);
+    }
+  };
+
+  /**
+   * Publicar la attestation.
+   *
+   * El identificador se saca del recibo porque es la única forma de conocerlo: `attest`
+   * devuelve un `bytes32`, pero el valor de retorno de una transacción no viaja de vuelta a
+   * quien la firmó. Por eso se pide el recibo con `onBlockConfirmation` en vez de conformarse
+   * con el hash.
+   *
+   * El identificador se guarda en una variable local y no en el estado: `onBlockConfirmation`
+   * corre ANTES de que esta espera termine, así que escribirlo directamente lo perdería en
+   * cuanto la línea de abajo montara el comprobante encima.
+   */
+  const atestiguar = async () => {
+    if (juntaId === undefined || !address) return;
+    let uid: string | undefined;
+    try {
+      setAtestiguando(true);
+      const hash = await escribirScore(
+        { functionName: "attest", args: [juntaId, address] },
+        { onBlockConfirmation: (recibo: TransactionReceipt) => (uid = uidDeLaAttestation(recibo)) },
+      );
+      if (hash) setAttestation({ hash, uid, junta: juntaId });
+    } finally {
+      setAtestiguando(false);
     }
   };
 
@@ -201,6 +268,7 @@ export default function MiScore() {
               alElegir={id => {
                 setElegida(id);
                 setComprobante(null);
+                setAttestation(null);
               }}
               rotulo="Tu historial se mide por junta"
               nota="Cada junta lleva su propia cuenta. Estás viendo la que elijas."
@@ -381,32 +449,81 @@ export default function MiScore() {
               {/* ── Dejarlo escrito ────────────────────────────────────────────────── */}
               <div className="k-tarjeta p-8 sm:p-10">
                 <p className="k-rotulo mb-4">Dejarlo por escrito</p>
-                <p className="mb-6 max-w-2xl leading-relaxed text-[--color-gris]">
-                  Consultar tu score es gratis y no deja rastro: el contrato lo calcula, te lo muestra y se olvida. Este
-                  botón hace lo contrario — guarda el resultado en la cadena para que cualquiera pueda consultarlo
-                  después, incluso si tú no estás presente.
+                <p className="mb-8 max-w-2xl leading-relaxed text-[--color-gris]">
+                  Consultar tu score es gratis y no deja rastro: el contrato lo calcula, te lo muestra y se olvida. Para
+                  que le sirva a alguien más hay que escribirlo, y hay{" "}
+                  <span className="text-[--color-marfil]">dos formas de hacerlo que no son la misma</span>.
                 </p>
 
-                <button className="k-boton" onClick={registrar} disabled={registrando}>
-                  {registrando ? "Registrando…" : "Registrar mi score en la cadena"}
-                </button>
-
-                {enlaceComprobante && (
-                  <div className="mt-6">
-                    <span className="k-sello">✓ QUEDÓ REGISTRADO</span>
-                    <p className="mt-4 text-sm leading-relaxed text-[--color-gris]">
-                      Ese registro es público y permanente: cualquiera puede verlo, y tú no puedes borrarlo.{" "}
-                      <a
-                        className="text-[--color-oro] underline underline-offset-4"
-                        href={enlaceComprobante}
-                        target="_blank"
-                        rel="noreferrer"
-                      >
-                        Ver el comprobante
-                      </a>
+                <div className="grid gap-8 sm:grid-cols-2">
+                  {/* ── En nuestro contrato ───────────────────────────────────────── */}
+                  <div className="flex flex-col">
+                    <p className="k-meta mb-3">1 · EN NUESTRO CONTRATO</p>
+                    <p className="mb-6 flex-1 text-sm leading-relaxed text-[--color-gris]">
+                      Registrar guarda el número en el contrato de Kallpa. Queda público y permanente, y cualquiera
+                      puede ir a consultarlo — pero antes tiene que saber que existimos y dónde mirar.
                     </p>
+                    <button className="k-boton" onClick={registrar} disabled={registrando}>
+                      {registrando ? "Registrando…" : "Registrar mi score"}
+                    </button>
+
+                    {enlaceComprobante && (
+                      <div className="mt-6">
+                        <span className="k-sello">✓ QUEDÓ REGISTRADO</span>
+                        <p className="mt-4 text-sm leading-relaxed text-[--color-gris]">
+                          Ese registro es público y permanente: cualquiera puede verlo, y tú no puedes borrarlo.{" "}
+                          <a
+                            className="text-[--color-oro] underline underline-offset-4"
+                            href={enlaceComprobante}
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            Ver el comprobante
+                          </a>
+                        </p>
+                      </div>
+                    )}
                   </div>
-                )}
+
+                  {/* ── En un registro que no es nuestro ──────────────────────────── */}
+                  <div className="flex flex-col">
+                    <p className="k-meta mb-3">2 · EN UN REGISTRO QUE NO ES NUESTRO</p>
+                    <p className="mb-6 flex-1 text-sm leading-relaxed text-[--color-gris]">
+                      La attestation publica el mismo número en un registro que no es nuestro y que ya leen otros, el
+                      Ethereum Attestation Service. Una financiera que nunca oyó hablar de Kallpa puede verificarlo ahí,
+                      sin pedirnos permiso y sin depender de que sigamos existiendo. Es lo que hace que tu reputación
+                      sea <span className="k-corazon text-[--color-marfil]">tuya</span> y no nuestra.
+                    </p>
+                    <button className="k-boton-borde" onClick={atestiguar} disabled={atestiguando}>
+                      {atestiguando ? "Publicando…" : "Publicar la attestation"}
+                    </button>
+
+                    {laAttestation && (
+                      <div className="mt-6">
+                        <span className="k-sello">✓ PUBLICADA</span>
+                        {laAttestation.uid ? (
+                          <>
+                            <p className="k-meta mt-4 mb-1">IDENTIFICADOR DE LA ATTESTATION</p>
+                            <p className="k-prueba break-all text-xs text-[--color-marfil]">{laAttestation.uid}</p>
+                          </>
+                        ) : null}
+                        <p className="mt-4 text-sm leading-relaxed text-[--color-gris]">
+                          {laAttestation.uid
+                            ? "Con ese identificador cualquiera lee la attestation completa desde el registro, sin pasar por Kallpa."
+                            : "La publicación quedó hecha, aunque el identificador no se pudo leer del comprobante. La transacción lo contiene."}{" "}
+                          <a
+                            className="text-[--color-oro] underline underline-offset-4"
+                            href={enlaceDeTx(laAttestation.hash)}
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            Ver la attestation
+                          </a>
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </div>
 
                 <div className="mt-8 border-t border-[--color-linea] pt-6">
                   <p className="k-meta mb-2">ÚLTIMO SCORE REGISTRADO</p>

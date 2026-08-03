@@ -5,6 +5,20 @@
 //! vivo de la Junta. No hay comité, no hay expediente y no hay una fotografía guardada de
 //! nadie.
 //!
+//! ## Por qué el solicitante ya no dice de qué junta viene
+//!
+//! Mientras `request_loan` recibía un `junta_id`, quien pedía el préstamo elegía la fuente de
+//! su propia reputación. Un miembro de tres juntas que hubiera incumplido en dos presentaba
+//! la buena y cobraba: el Pool no estaba decidiendo con el comportamiento del solicitante,
+//! sino con la parte del comportamiento que el solicitante quiso mostrarle. Ninguna
+//! validación del lado del Pool arregla eso, porque la junta señalada es real y el historial
+//! que devuelve es cierto; lo falso es que sea el historial completo.
+//!
+//! Ahora el Pool solo entrega la dirección del solicitante y el ScoreEngine responde por
+//! todas sus juntas a la vez. El monto sale del **peor** score encontrado, que es la lectura
+//! prudente para quien presta sin aval: la conducta que hay que temer es la peor, no el
+//! promedio ni la mejor. Al solicitante no le queda nada que escoger.
+//!
 //! ## Por qué recomputa en vez de leer un score guardado
 //!
 //! Un score persistido solo se actualiza cuando alguien paga gas por actualizarlo, y quien
@@ -19,9 +33,10 @@
 //! ## Lo que cuesta
 //!
 //! Cada decisión de crédito hace dos saltos de lectura —Pool → ScoreEngine → Junta— dentro
-//! de la misma transacción. Son lecturas, no escrituras, y en una red de segunda capa el
-//! costo es marginal frente a lo que compran: que la decisión use los hechos del segundo en
-//! que se toma.
+//! de la misma transacción, y el segundo salto se repite por cada junta del miembro, así que
+//! el costo crece con cuántas tenga. Son lecturas, no escrituras, y en una red de segunda
+//! capa el costo es marginal frente a lo que compran: que la decisión use los hechos del
+//! segundo en que se toma, y que los use todos.
 
 #![cfg_attr(not(any(test, feature = "export-abi")), no_main)]
 #![cfg_attr(not(any(test, feature = "export-abi")), no_std)]
@@ -53,12 +68,16 @@ sol! {
     // Se arma a mano en vez de usar `sol_interface!` porque ese macro enruta por una vía
     // deprecada que esquiva la abstracción de VM, y con ella la posibilidad de interceptar
     // las llamadas desde las pruebas.
-    function scoreAndCredit(uint32 juntaId, address member) external view returns (uint16, bool);
+    function scoreGlobal(address member) external view returns (uint16, bool, uint32);
     function transferFrom(address from, address to, uint256 value) external returns (bool);
     function transfer(address to, uint256 value) external returns (bool);
 
     event LiquidityDeposited(address indexed quien, uint256 monto);
-    event LoanGranted(uint32 indexed juntaId, address indexed member, uint256 monto, uint16 score);
+    // El primer campo era el `juntaId` que traía el solicitante. Ahora que no trae ninguno,
+    // el lugar lo ocupa cuántas juntas suyas se miraron para decidir: es lo que permite
+    // auditar después si el préstamo se dio con evidencia amplia o con una sola junta. Se
+    // conserva la posición y el `indexed` para no romper a quien decodifique por forma.
+    event LoanGranted(uint32 indexed juntasEvaluadas, address indexed member, uint256 monto, uint16 score);
     event LoanRepaid(address indexed member, uint256 monto);
 
     #[derive(Debug)]
@@ -69,8 +88,11 @@ sol! {
     error NoTienePrestamoActivo(address member);
     #[derive(Debug)]
     error LiquidezInsuficiente(uint256 pedido, uint256 disponible);
+    // Sin `junta_id` en la solicitud, el error tampoco puede señalar una junta: lo que falló
+    // es la consulta global por el miembro, y nombrar una junta cualquiera solo confundiría a
+    // quien lea el revert.
     #[derive(Debug)]
-    error ScoreNoDisponible(uint32 juntaId, address member);
+    error ScoreNoDisponible(address member);
     #[derive(Debug)]
     error TransferenciaFallida();
     #[derive(Debug)]
@@ -91,7 +113,11 @@ pub enum PoolError {
 sol_storage! {
     pub struct Prestamo {
         uint256 monto;
-        uint32 junta_id;
+        // Ocupa el lugar del antiguo `junta_id`, que dejó de existir cuando el solicitante
+        // dejó de elegir la junta. Guardar cuántas juntas se evaluaron deja constancia de
+        // sobre cuánta evidencia se prestó, que es lo que un préstamo pasado necesita
+        // explicar.
+        uint32 juntas_evaluadas;
         uint64 momento;
         uint16 score_al_prestar;
         bool activo;
@@ -123,42 +149,37 @@ fn tramo_de(score: u16) -> u64 {
 }
 
 impl Pool {
-    /// Pregunta al ScoreEngine por el score y la elegibilidad del miembro, ahora mismo.
+    /// Pregunta al ScoreEngine por la reputación del miembro en todas sus juntas, ahora mismo.
+    ///
+    /// Devuelve `(peor_score, con_credito, juntas_evaluadas)`. El primero es el más bajo de
+    /// sus juntas, y es contra ese que el Pool decide: quien presta sin aval tiene que mirar
+    /// la peor conducta del solicitante, no la que él prefiera enseñar.
     ///
     /// Es una lectura, así que va por `self.vm()` y se puede interceptar desde las pruebas.
-    /// La elegibilidad la decide el ScoreEngine y no este contrato: además del umbral,
-    /// exige un historial mínimo, porque un miembro recién llegado no tiene ninguna señal
-    /// negativa que mostrar y el modelo lo puntuaría casi perfecto.
-    fn consultar_score(&self, junta_id: u32, member: Address) -> Result<(u16, bool), PoolError> {
-        let datos = scoreAndCreditCall {
-            juntaId: junta_id,
-            member,
-        }
-        .abi_encode();
+    /// La elegibilidad la decide el ScoreEngine y no este contrato: además del umbral, exige
+    /// un historial mínimo, porque un miembro recién llegado no tiene ninguna señal negativa
+    /// que mostrar y el modelo lo puntuaría casi perfecto.
+    fn consultar_score_global(&self, member: Address) -> Result<(u16, bool, u32), PoolError> {
+        let datos = scoreGlobalCall { member }.abi_encode();
 
         let contexto: &Self = self;
         let respuesta = self
             .vm()
             .static_call(&contexto, self.score_engine.get(), &datos)
-            .map_err(|_| {
-                PoolError::ScoreNoDisponible(ScoreNoDisponible {
-                    juntaId: junta_id,
-                    member,
-                })
-            })?;
+            .map_err(|_| PoolError::ScoreNoDisponible(ScoreNoDisponible { member }))?;
 
-        if respuesta.len() < 64 {
-            return Err(PoolError::ScoreNoDisponible(ScoreNoDisponible {
-                juntaId: junta_id,
-                member,
-            }));
+        if respuesta.len() < 96 {
+            return Err(PoolError::ScoreNoDisponible(ScoreNoDisponible { member }));
         }
 
-        // Dos palabras de treinta y dos bytes: el score en la primera, la elegibilidad en la
-        // segunda.
-        let score = ((respuesta[30] as u16) << 8) | (respuesta[31] as u16);
+        // Tres palabras de treinta y dos bytes, todas de tamaño fijo y por eso codificadas
+        // en el sitio que anuncian: el peor score en la primera, la elegibilidad en la
+        // segunda y el conteo de juntas en la tercera.
+        let peor_score = ((respuesta[30] as u16) << 8) | (respuesta[31] as u16);
         let con_credito = respuesta[63] != 0;
-        Ok((score, con_credito))
+        let juntas_evaluadas =
+            u32::from_be_bytes([respuesta[92], respuesta[93], respuesta[94], respuesta[95]]);
+        Ok((peor_score, con_credito, juntas_evaluadas))
     }
 
     /// Envía una transferencia del token y exige respuesta afirmativa.
@@ -226,11 +247,12 @@ impl Pool {
 
     /// Concede un préstamo recomputando el score del solicitante en este mismo instante.
     ///
-    /// El monto sale del tramo que le corresponde a ese score. Si el miembro no es
-    /// elegible —porque incumplió, o porque todavía no tiene historial suficiente— la
-    /// transacción revierte con un motivo legible, y nadie tuvo que declarar nada para que
-    /// eso pasara: basta con que el tiempo haya corrido.
-    pub fn request_loan(&mut self, junta_id: u32) -> Result<U256, PoolError> {
+    /// No recibe nada: la única identidad que entra en la decisión es la del remitente, que
+    /// él no puede falsear. El monto sale del tramo del peor score que tenga entre sus
+    /// juntas. Si el miembro no es elegible —porque incumplió, o porque todavía no tiene
+    /// historial suficiente— la transacción revierte con un motivo legible, y nadie tuvo que
+    /// declarar nada para que eso pasara: basta con que el tiempo haya corrido.
+    pub fn request_loan(&mut self) -> Result<U256, PoolError> {
         let member = self.vm().msg_sender();
 
         if self.prestamos.get(member).activo.get() {
@@ -239,12 +261,12 @@ impl Pool {
             }));
         }
 
-        let (score, con_credito) = self.consultar_score(junta_id, member)?;
-        let monto = U256::from(tramo_de(score));
+        let (peor_score, con_credito, juntas_evaluadas) = self.consultar_score_global(member)?;
+        let monto = U256::from(tramo_de(peor_score));
         if !con_credito || monto.is_zero() {
             return Err(PoolError::CreditoSuspendido(CreditoSuspendido {
                 member,
-                score,
+                score: peor_score,
             }));
         }
 
@@ -262,9 +284,9 @@ impl Pool {
         {
             let mut p = self.prestamos.setter(member);
             p.monto.set(monto);
-            p.junta_id.set(U32::from(junta_id));
+            p.juntas_evaluadas.set(U32::from(juntas_evaluadas));
             p.momento.set(U64::from(ahora));
-            p.score_al_prestar.set(U16::from(score));
+            p.score_al_prestar.set(U16::from(peor_score));
             p.activo.set(true);
         }
         let vigente = self.prestado_vigente.get() + monto;
@@ -281,10 +303,10 @@ impl Pool {
         log(
             self.vm(),
             LoanGranted {
-                juntaId: junta_id,
+                juntasEvaluadas: juntas_evaluadas,
                 member,
                 monto,
-                score,
+                score: peor_score,
             },
         );
         Ok(monto)
@@ -322,12 +344,18 @@ impl Pool {
         Ok(())
     }
 
-    /// El préstamo de un miembro: `(monto, junta_id, momento, score_al_prestar, activo)`.
+    /// El préstamo de un miembro: `(monto, juntas_evaluadas, momento, score_al_prestar, activo)`.
+    ///
+    /// **El segundo valor cambió de significado.** Antes era el `junta_id` que el solicitante
+    /// declaraba; ahora es cuántas juntas suyas se evaluaron para conceder el préstamo. La
+    /// forma de la tupla es la misma —mismo largo, mismos tipos, misma posición— porque quien
+    /// consume esto lo lee por posición y un cambio de forma lo rompería en silencio; lo que
+    /// tiene que cambiar es cómo se rotula ese número en pantalla, no dónde se busca.
     pub fn loan_of(&self, member: Address) -> (U256, u32, u64, u16, bool) {
         let p = self.prestamos.get(member);
         (
             p.monto.get(),
-            p.junta_id.get().to::<u32>(),
+            p.juntas_evaluadas.get().to::<u32>(),
             p.momento.get().to::<u64>(),
             p.score_al_prestar.get().to::<u16>(),
             p.activo.get(),

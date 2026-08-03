@@ -50,7 +50,12 @@ fn junta_de(n: u8) -> (TestVM, Junta, Vec<Address>) {
 
     let miembros: Vec<Address> = (1..=n).map(miembro).collect();
     contrato
-        .create_junta("Las Emprendedoras".into(), miembros.clone(), U256::from(CUOTA), PERIODO)
+        .create_junta(
+            "Las Emprendedoras".into(),
+            miembros.clone(),
+            U256::from(CUOTA),
+            PERIODO,
+        )
         .unwrap();
     (vm, contrato, miembros)
 }
@@ -317,20 +322,73 @@ fn una_junta_necesita_miembros_cuota_y_periodo() {
     c.constructor(TOKEN);
 
     assert!(c
-        .create_junta("Sin nadie".into(), alloc::vec![], U256::from(CUOTA), PERIODO)
+        .create_junta(
+            "Sin nadie".into(),
+            alloc::vec![],
+            U256::from(CUOTA),
+            PERIODO
+        )
         .is_err());
     assert!(c
-        .create_junta("Sin cuota".into(), alloc::vec![miembro(1)], U256::ZERO, PERIODO)
+        .create_junta(
+            "Sin cuota".into(),
+            alloc::vec![miembro(1)],
+            U256::ZERO,
+            PERIODO
+        )
         .is_err());
     assert!(c
-        .create_junta("Sin periodo".into(), alloc::vec![miembro(1)], U256::from(CUOTA), 0)
+        .create_junta(
+            "Sin periodo".into(),
+            alloc::vec![miembro(1)],
+            U256::from(CUOTA),
+            0
+        )
         .is_err());
 }
 
 #[test]
+fn cada_junta_lleva_su_propia_cuenta() {
+    // El contrato alberga muchas juntas y el historial es del par (junta, miembro), así
+    // que lo que pasa en una no puede contaminar a la otra.
+    let (vm, mut c, m) = junta_de(4);
+    c.create_junta(
+        "La lenta".into(),
+        m.clone(),
+        U256::from(CUOTA),
+        PERIODO * 10,
+    )
+    .unwrap();
+
+    vm.set_block_timestamp(INICIO + 3 * PERIODO);
+
+    let (_, _, _, en_la_rapida, _, _, _, _) = c.history(0, m[0]);
+    let (_, _, _, en_la_lenta, _, _, _, _) = c.history(1, m[0]);
+
+    assert_eq!(en_la_rapida, 3);
+    assert_eq!(en_la_lenta, 0, "sus ciclos duran diez veces más");
+}
+
+// =====================================================================================
+// La disputa es la única señal que alguien escribe a mano, y por eso la única fabricable
+//
+// Las otras siete salen de un depósito o del reloj, así que nadie puede inventarlas. Esta
+// depende de que alguien la reporte, y cada prueba de aquí abajo sujeta una de las tres
+// guardas que la atan al juicio del grupo (ADR-0013). La medida del agujero que cerraron:
+// `disputas_perdidas` pesa +1.8159 sobre un dominio que topa en 5, y el score reparte los
+// log-odds sobre un ancho de 12 — unos 30 puntos por reporte, ~151 al saturar.
+// =====================================================================================
+
+#[test]
 fn las_disputas_se_acumulan_por_miembro() {
-    let (_vm, mut c, m) = junta_de(4);
+    // El camino feliz: dos miembros distintos coinciden en señalar al mismo y la señal
+    // suma dos. Es exactamente lo que la vuelve el juicio del grupo y no el de una
+    // dirección.
+    let (vm, mut c, m) = junta_de(4);
+
+    vm.set_sender(m[0]);
     c.report_dispute(0, m[2]).unwrap();
+    vm.set_sender(m[1]);
     c.report_dispute(0, m[2]).unwrap();
 
     let (_, _, _, _, _, _, _, disputas) = c.history(0, m[2]);
@@ -340,20 +398,158 @@ fn las_disputas_se_acumulan_por_miembro() {
 }
 
 #[test]
-fn cada_junta_lleva_su_propia_cuenta() {
-    // El contrato alberga muchas juntas y el historial es del par (junta, miembro), así
-    // que lo que pasa en una no puede contaminar a la otra.
+fn un_extrano_no_puede_reportar_a_nadie() {
+    // El agujero original: se validaba que el reportado fuera miembro, nunca quién
+    // llamaba. Cualquier dirección del mundo podía hundir el score de cualquier miembro
+    // por el precio del gas.
     let (vm, mut c, m) = junta_de(4);
-    c.create_junta("La lenta".into(), m.clone(), U256::from(CUOTA), PERIODO * 10)
-        .unwrap();
+    let forastero = miembro(200);
+    vm.set_sender(forastero);
 
-    vm.set_block_timestamp(INICIO + 3 * PERIODO);
+    match c.report_dispute(0, m[2]) {
+        Err(JuntaError::NoEsMiembro(e)) => assert_eq!(
+            e.quien, forastero,
+            "el error señala al llamante, que es quien está de más"
+        ),
+        otro => panic!("quien no está en la junta no presenció nada: {otro:?}"),
+    }
 
-    let (_, _, _, en_la_rapida, _, _, _, _) = c.history(0, m[0]);
-    let (_, _, _, en_la_lenta, _, _, _, _) = c.history(1, m[0]);
+    let (_, _, _, _, _, _, _, disputas) = c.history(0, m[2]);
+    assert_eq!(disputas, 0, "no se escribió nada");
+}
 
-    assert_eq!(en_la_rapida, 3);
-    assert_eq!(en_la_lenta, 0, "sus ciclos duran diez veces más");
+#[test]
+fn nadie_puede_reportarse_a_si_mismo() {
+    // Una disputa la pierde alguien contra alguien. Sin esta guarda, además, un atacante
+    // podría gastar su propio cupo contra sí mismo y aparecer como reportante limpio.
+    let (vm, mut c, m) = junta_de(4);
+    vm.set_sender(m[1]);
+
+    match c.report_dispute(0, m[1]) {
+        Err(JuntaError::NoPuedeReportarseASiMismo(e)) => {
+            assert_eq!(e.juntaId, 0);
+            assert_eq!(e.quien, m[1]);
+        }
+        otro => panic!("no hay disputa de alguien contra sí mismo: {otro:?}"),
+    }
+
+    let (_, _, _, _, _, _, _, disputas) = c.history(0, m[1]);
+    assert_eq!(disputas, 0);
+}
+
+#[test]
+fn un_reportante_cuenta_una_sola_vez_por_reportado() {
+    let (vm, mut c, m) = junta_de(4);
+    vm.set_sender(m[0]);
+    c.report_dispute(0, m[2]).unwrap();
+
+    match c.report_dispute(0, m[2]) {
+        Err(JuntaError::YaReporto(e)) => {
+            assert_eq!(e.juntaId, 0);
+            assert_eq!(e.reportante, m[0]);
+            assert_eq!(e.member, m[2]);
+        }
+        otro => panic!("el segundo reporte del mismo miembro no cuenta: {otro:?}"),
+    }
+
+    let (_, _, _, _, _, _, _, disputas) = c.history(0, m[2]);
+    assert_eq!(disputas, 1, "quedó el único juicio que de verdad hubo");
+}
+
+#[test]
+fn un_solo_miembro_ya_no_puede_saturar_la_senal() {
+    // Esta es la prueba del ataque completo. Cinco reportes seguidos llevaban la señal a
+    // su tope y le costaban a la víctima unos 151 puntos: de sobra para tumbarla de 550 a
+    // 399 y dejarla sin línea de crédito. Ahora un miembro vale un reporte.
+    let (vm, mut c, m) = junta_de(8);
+    vm.set_sender(m[0]);
+
+    c.report_dispute(0, m[7]).unwrap();
+    for _ in 0..4 {
+        assert!(c.report_dispute(0, m[7]).is_err());
+    }
+
+    let (_, _, _, _, _, _, _, disputas) = c.history(0, m[7]);
+    assert_eq!(disputas, 1, "hace falta el grupo para saturar la señal");
+}
+
+#[test]
+fn el_mismo_reportante_puede_reportar_a_otro_miembro() {
+    // El cupo es por reportado, no por reportante: quien presenció dos disputas distintas
+    // puede reportar las dos.
+    let (vm, mut c, m) = junta_de(4);
+    vm.set_sender(m[0]);
+    c.report_dispute(0, m[1]).unwrap();
+    c.report_dispute(0, m[2]).unwrap();
+
+    let (_, _, _, _, _, _, _, una) = c.history(0, m[1]);
+    let (_, _, _, _, _, _, _, otra) = c.history(0, m[2]);
+    assert_eq!(una, 1);
+    assert_eq!(otra, 1);
+}
+
+#[test]
+fn haber_reportado_en_una_junta_no_gasta_el_reporte_de_la_otra() {
+    // El historial es del par (junta, miembro): dos personas que comparten dos juntas
+    // pueden perder una disputa en cada una, y son hechos distintos.
+    let (vm, mut c, m) = junta_de(4);
+    c.create_junta(
+        "Los del Mercado".into(),
+        m.clone(),
+        U256::from(CUOTA),
+        PERIODO,
+    )
+    .unwrap();
+
+    vm.set_sender(m[0]);
+    c.report_dispute(0, m[2]).unwrap();
+    c.report_dispute(1, m[2]).unwrap();
+
+    let (_, _, _, _, _, _, _, en_la_primera) = c.history(0, m[2]);
+    let (_, _, _, _, _, _, _, en_la_segunda) = c.history(1, m[2]);
+    assert_eq!(en_la_primera, 1);
+    assert_eq!(en_la_segunda, 1);
+}
+
+#[test]
+fn no_se_le_puede_perder_una_disputa_a_quien_no_esta_en_la_junta() {
+    let (vm, mut c, m) = junta_de(4);
+    let forastero = miembro(200);
+    vm.set_sender(m[0]);
+
+    match c.report_dispute(0, forastero) {
+        Err(JuntaError::NoEsMiembro(e)) => assert_eq!(
+            e.quien, forastero,
+            "aquí el que está de más es el reportado"
+        ),
+        otro => panic!("el reportado tiene que pertenecer a la junta: {otro:?}"),
+    }
+}
+
+#[test]
+fn no_se_puede_reportar_en_una_junta_que_no_existe() {
+    let (vm, mut c, m) = junta_de(4);
+    vm.set_sender(m[0]);
+    assert!(c.report_dispute(7, m[1]).is_err());
+}
+
+#[test]
+fn la_vista_dice_si_el_boton_va_deshabilitado() {
+    // Sin esta consulta la aplicación solo sabe ofrecer un botón que falla, y el usuario
+    // paga gas para enterarse de una regla que el contrato ya conocía.
+    let (vm, mut c, m) = junta_de(4);
+    assert!(!c.ya_reporto(0, m[0], m[2]));
+
+    vm.set_sender(m[0]);
+    c.report_dispute(0, m[2]).unwrap();
+
+    assert!(c.ya_reporto(0, m[0], m[2]));
+    assert!(
+        !c.ya_reporto(0, m[1], m[2]),
+        "la huella es de cada reportante"
+    );
+    assert!(!c.ya_reporto(0, m[0], m[1]), "y de cada reportado");
+    assert!(!c.ya_reporto(1, m[0], m[2]), "y de cada junta");
 }
 
 // =====================================================================================

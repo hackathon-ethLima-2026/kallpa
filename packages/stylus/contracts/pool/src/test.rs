@@ -15,28 +15,44 @@ const TOKEN: Address = Address::new([9u8; 20]);
 const MOTOR: Address = Address::new([7u8; 20]);
 const MARIA: Address = Address::new([1u8; 20]);
 
-/// La respuesta que daría el ScoreEngine: dos palabras de treinta y dos bytes.
-fn respuesta_del_motor(score: u16, con_credito: bool) -> Vec<u8> {
-    let mut salida = alloc::vec![0u8; 64];
-    salida[30] = (score >> 8) as u8;
-    salida[31] = (score & 0xFF) as u8;
+/// Cuántas juntas dice haber evaluado el motor cuando la prueba no mira ese número.
+const JUNTAS: u32 = 2;
+
+/// La respuesta que daría el ScoreEngine: tres palabras de treinta y dos bytes.
+fn respuesta_del_motor(peor_score: u16, con_credito: bool, juntas_evaluadas: u32) -> Vec<u8> {
+    let mut salida = alloc::vec![0u8; 96];
+    salida[30] = (peor_score >> 8) as u8;
+    salida[31] = (peor_score & 0xFF) as u8;
     salida[63] = if con_credito { 1 } else { 0 };
+    salida[92..96].copy_from_slice(&juntas_evaluadas.to_be_bytes());
     salida
 }
 
-fn pool_con(score: u16, con_credito: bool) -> (TestVM, Pool) {
+/// Un Pool que le pregunta al motor por María y recibe esta respuesta.
+///
+/// La consulta ya no lleva junta: el único dato que entra es la dirección de quien pide, así
+/// que el mock se ancla solamente a ella.
+fn pool_con_juntas(peor_score: u16, con_credito: bool, juntas_evaluadas: u32) -> (TestVM, Pool) {
     let vm = TestVM::default();
     let mut pool = Pool::from(&vm);
     pool.constructor(TOKEN, MOTOR);
     vm.set_sender(MARIA);
 
-    let datos = scoreAndCreditCall {
-        juntaId: 0,
-        member: MARIA,
-    }
-    .abi_encode();
-    vm.mock_static_call(MOTOR, datos, Ok(respuesta_del_motor(score, con_credito)));
+    let datos = scoreGlobalCall { member: MARIA }.abi_encode();
+    vm.mock_static_call(
+        MOTOR,
+        datos,
+        Ok(respuesta_del_motor(
+            peor_score,
+            con_credito,
+            juntas_evaluadas,
+        )),
+    );
     (vm, pool)
+}
+
+fn pool_con(peor_score: u16, con_credito: bool) -> (TestVM, Pool) {
+    pool_con_juntas(peor_score, con_credito, JUNTAS)
 }
 
 /// Coloca liquidez en el Pool sin pasar por el token, que no se puede simular.
@@ -95,6 +111,21 @@ fn un_score_mas_alto_nunca_presta_menos() {
 // =====================================================================================
 
 #[test]
+fn sin_credito_global_no_hay_prestamo_aunque_una_junta_suya_este_impecable() {
+    // María cumple sin falta en una de sus juntas y dejó de aportar en la otra. Mientras ella
+    // señalaba la junta, presentaba la impecable y se llevaba el tramo máximo; el Pool
+    // decidía con la parte del comportamiento que ella escogía enseñar. Ahora el motor
+    // responde por las dos y devuelve el peor score: no hay nada que escoger.
+    let (_vm, mut pool) = pool_con_juntas(180, false, 2);
+    con_liquidez(&mut pool, 1_000_000_000);
+
+    assert!(
+        pool.request_loan().is_err(),
+        "prestó a quien incumplió en otra de sus juntas"
+    );
+}
+
+#[test]
 fn sin_elegibilidad_no_hay_prestamo_por_alto_que_sea_el_score() {
     // Es el caso del miembro recién llegado: puntúa casi perfecto porque no hay ninguna
     // señal negativa que observar, pero no tiene historial suficiente para que ese número
@@ -104,7 +135,7 @@ fn sin_elegibilidad_no_hay_prestamo_por_alto_que_sea_el_score() {
     con_liquidez(&mut pool, 1_000_000_000);
 
     assert!(
-        pool.request_loan(0).is_err(),
+        pool.request_loan().is_err(),
         "prestó a alguien sin historial suficiente"
     );
 }
@@ -113,7 +144,7 @@ fn sin_elegibilidad_no_hay_prestamo_por_alto_que_sea_el_score() {
 fn quien_incumplio_no_recibe_credito() {
     let (_vm, mut pool) = pool_con(95, false);
     con_liquidez(&mut pool, 1_000_000_000);
-    assert!(pool.request_loan(0).is_err());
+    assert!(pool.request_loan().is_err());
 }
 
 #[test]
@@ -121,7 +152,7 @@ fn un_score_bajo_no_recibe_credito_aunque_sea_elegible() {
     // Elegible por historial, pero por debajo del primer tramo: no hay monto que prestar.
     let (_vm, mut pool) = pool_con(350, true);
     con_liquidez(&mut pool, 1_000_000_000);
-    assert!(pool.request_loan(0).is_err());
+    assert!(pool.request_loan().is_err());
 }
 
 #[test]
@@ -134,7 +165,7 @@ fn si_el_motor_no_responde_no_se_presta() {
     vm.set_sender(MARIA);
     con_liquidez(&mut pool, 1_000_000_000);
 
-    assert!(pool.request_loan(0).is_err());
+    assert!(pool.request_loan().is_err());
 }
 
 #[test]
@@ -142,7 +173,7 @@ fn sin_liquidez_suficiente_se_rechaza_antes_de_mover_nada() {
     let (_vm, mut pool) = pool_con(990, true);
     con_liquidez(&mut pool, 10_000_000); // menos que el tramo que le corresponde
 
-    assert!(pool.request_loan(0).is_err());
+    assert!(pool.request_loan().is_err());
     let (_, prestado, _) = pool.liquidity_status();
     assert_eq!(prestado, U256::ZERO, "no se registró un préstamo fallido");
 }
@@ -159,7 +190,7 @@ fn no_se_puede_pedir_dos_prestamos_a_la_vez() {
     }
     con_liquidez(&mut pool, 1_000_000_000);
 
-    assert!(pool.request_loan(0).is_err());
+    assert!(pool.request_loan().is_err());
 }
 
 #[test]
@@ -215,22 +246,43 @@ fn depositar_cero_no_es_un_deposito() {
 #[test]
 fn el_score_se_decodifica_bien_en_todo_el_rango() {
     for score in [0u16, 1, 255, 256, 400, 749, 750, 999, 1000] {
-        let vm = TestVM::default();
-        let mut pool = Pool::from(&vm);
-        pool.constructor(TOKEN, MOTOR);
-        vm.set_sender(MARIA);
-        vm.mock_static_call(
-            MOTOR,
-            scoreAndCreditCall {
-                juntaId: 0,
-                member: MARIA,
-            }
-            .abi_encode(),
-            Ok(respuesta_del_motor(score, true)),
-        );
+        let (_vm, pool) = pool_con(score, true);
 
-        let (leido, credito) = pool.consultar_score(0, MARIA).unwrap();
-        assert_eq!(leido, score, "el score se leyó mal");
+        let (leido, credito, _) = pool.consultar_score_global(MARIA).unwrap();
+        assert_eq!(leido, score, "el peor score se leyó mal");
         assert!(credito);
     }
+}
+
+#[test]
+fn el_conteo_de_juntas_se_decodifica_bien_en_todo_el_rango() {
+    // Vive en la tercera palabra de la respuesta y ocupa sus últimos cuatro bytes. Los
+    // valores elegidos cruzan cada frontera de byte, que es donde un desplazamiento mal
+    // puesto se nota.
+    for juntas in [0u32, 1, 255, 256, 65_535, 65_536, u32::MAX] {
+        let (_vm, pool) = pool_con_juntas(700, true, juntas);
+
+        let (_, _, leidas) = pool.consultar_score_global(MARIA).unwrap();
+        assert_eq!(leidas, juntas, "el conteo de juntas se leyó mal");
+    }
+}
+
+#[test]
+fn una_respuesta_mas_corta_de_lo_esperado_no_se_interpreta() {
+    // Es exactamente lo que devolvería un ScoreEngine viejo, con la interfaz de dos palabras.
+    // Leer esos bytes como si fueran tres daría un conteo de juntas inventado, así que la
+    // consulta falla y el préstamo se cae: una interfaz desincronizada tiene que romperse.
+    let vm = TestVM::default();
+    let mut pool = Pool::from(&vm);
+    pool.constructor(TOKEN, MOTOR);
+    vm.set_sender(MARIA);
+    vm.mock_static_call(
+        MOTOR,
+        scoreGlobalCall { member: MARIA }.abi_encode(),
+        Ok(alloc::vec![0u8; 64]),
+    );
+    con_liquidez(&mut pool, 1_000_000_000);
+
+    assert!(pool.consultar_score_global(MARIA).is_err());
+    assert!(pool.request_loan().is_err());
 }
