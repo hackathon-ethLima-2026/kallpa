@@ -93,6 +93,7 @@ const ABI = {
   createJunta: fn(
     "createJunta",
     [
+      { name: "nombre", type: "string" },
       { name: "miembros", type: "address[]" },
       { name: "cuota", type: "uint256" },
       { name: "periodo", type: "uint64" },
@@ -271,6 +272,7 @@ async function main() {
 
   console.log("\n3. Creando las dos juntas...");
   await enviar(tesorero, JUNTA, ABI.createJunta, "createJunta", [
+    "Las Emprendedoras",
     direcciones,
     CUOTA,
     PERIODO,
@@ -285,6 +287,7 @@ async function main() {
   const BUENA = total - 1;
 
   await enviar(tesorero, JUNTA, ABI.createJunta, "createJunta", [
+    "Los del Mercado",
     direcciones,
     CUOTA,
     PERIODO,

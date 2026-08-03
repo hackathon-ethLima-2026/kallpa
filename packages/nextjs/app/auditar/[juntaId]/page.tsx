@@ -42,6 +42,14 @@ export default function Auditar({ params }: { params: Promise<{ juntaId: string 
     args: [id],
   });
 
+  // El nombre vive en la cadena, no en la interfaz: cualquier aplicación que lea este
+  // contrato muestra el mismo, y quien audita ve el que usan sus miembros.
+  const { data: nombreJunta } = useScaffoldReadContract({
+    contractName: "junta",
+    functionName: "juntaNombre",
+    args: [id],
+  });
+
   const { data: cobertura } = useScaffoldReadContract({
     contractName: "junta",
     functionName: "cycleCoverage",
@@ -54,6 +62,7 @@ export default function Auditar({ params }: { params: Promise<{ juntaId: string 
   const [aportado, distribuido, saldoReal, cuadra] = integridad ?? [];
   const [pozo, ciclo, turno, miembros] = estado ?? [];
   const [, pagadas, totalCuotas] = cobertura ?? [];
+  const nombre = nombreJunta as string | undefined;
 
   const cargando = integridad === undefined || estado === undefined;
   const existe = miembros !== undefined && Number(miembros) > 0;
@@ -69,7 +78,7 @@ export default function Auditar({ params }: { params: Promise<{ juntaId: string 
       </header>
 
       <main className="mx-auto max-w-4xl px-6 py-12 sm:px-10">
-        <p className="k-rotulo mb-3">Junta #{juntaId}</p>
+        <p className="k-rotulo mb-3">{nombre ? `${nombre} · junta #${juntaId}` : `Junta #${juntaId}`}</p>
         <h1 className="k-voz mb-4 text-4xl font-bold tracking-tight sm:text-5xl">
           ¿La caja cuadra?
         </h1>

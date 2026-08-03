@@ -1,94 +1,115 @@
 "use client";
 
-import type { NextPage } from "next";
-import { useTheme } from "next-themes";
-import { useAccount } from "wagmi";
-import { Card } from "~~/components/Card";
-import { Address } from "~~/components/scaffold-eth";
-import CompassIcon from "~~/icons/CompassIcon";
-import DarkBugAntIcon from "~~/icons/DarkBugAntIcon";
-import LightBugAntIcon from "~~/icons/LightBugAntIcon";
+/**
+ * La portada: las juntas a las que perteneces.
+ *
+ * Es la primera pregunta que se hace cualquiera al abrir la aplicación, y hasta hace poco el
+ * contrato no sabía responderla: había que recorrer todas las juntas existentes preguntando
+ * una por una si estabas en ella. Ahora el contrato mantiene el índice y esta pantalla es una
+ * sola lectura.
+ */
 
-const Home: NextPage = () => {
-  const { address: connectedAddress } = useAccount();
-  const { resolvedTheme } = useTheme();
-  const isDarkMode = resolvedTheme === "dark";
+import type { NextPage } from "next";
+import Link from "next/link";
+import { useAccount } from "wagmi";
+import { Isotipo } from "~~/components/kallpa/Isotipo";
+import { Cargando, Marco, PideBilletera, Titulo, Vacio } from "~~/components/kallpa/Marco";
+import { TarjetaDeJunta } from "~~/components/kallpa/TarjetaDeJunta";
+import { useScaffoldReadContract } from "~~/hooks/scaffold-eth";
+
+const Portada: NextPage = () => {
+  const { address } = useAccount();
+
+  const { data: misJuntas, isLoading } = useScaffoldReadContract({
+    contractName: "junta",
+    functionName: "juntasDe",
+    args: [address],
+  });
+
+  const { data: totalJuntas } = useScaffoldReadContract({
+    contractName: "junta",
+    functionName: "totalJuntas",
+  });
 
   return (
-    <>
-      <div className="flex items-center flex-col justify-between flex-grow pt-10">
-        <div className="flex flex-col justify-center flex-grow">
-          <div className="px-5">
-            <h1 className="text-center">
-              <span className="block text-2xl mb-2">Welcome to</span>
-              <span className="block text-4xl font-bold">Scaffold-Stylus</span>
-            </h1>
-            <div className="flex justify-center items-center space-x-2 my-4">
-              <p className={`my-2 font-medium ${!isDarkMode ? "text-[#E3066E]" : ""}`}>Connected Address:</p>
-              <Address address={connectedAddress} />
-            </div>
-            <p className="text-center text-lg">
-              Get started by editing{" "}
-              <code
-                className="italic bg-base-300 text-black text-base font-bold max-w-full break-words break-all inline-block"
-                style={{
-                  backgroundColor: isDarkMode ? "white" : "#F0F0F0",
-                }}
-              >
-                packages/nextjs/app/page.tsx
-              </code>
-            </p>
-            <p className="text-center text-lg">
-              Edit your smart contract{" "}
-              <code
-                className="italic bg-base-300 text-black text-base font-bold max-w-full break-words break-all inline-block"
-                style={{
-                  backgroundColor: isDarkMode ? "white" : "#F0F0F0",
-                }}
-              >
-                lib.rs
-              </code>{" "}
-              in{" "}
-              <code
-                className="italic bg-base-300 text-black text-base font-bold max-w-full break-words break-all inline-block"
-                style={{
-                  backgroundColor: isDarkMode ? "white" : "#F0F0F0",
-                }}
-              >
-                packages/stylus/contracts/your-contract/src
-              </code>
-            </p>
-          </div>
-        </div>
+    <Marco>
+      <Titulo
+        rotulo="Mis juntas"
+        titulo="Tus juntas, custodiadas por el contrato"
+        bajada={
+          <>
+            Nadie —ni siquiera nosotros— puede tocar el pozo.{" "}
+            <span className="text-[--color-oro]">Solvencia probada, no prometida.</span>
+          </>
+        }
+      />
 
-        <div
-          className="h-auto sm:h-[306px] mb-3 w-full py-11"
-          style={{
-            backgroundColor: isDarkMode ? "#050505" : "white",
-          }}
-        >
-          <div className="flex justify-center items-center h-full gap-12 flex-col sm:flex-row">
-            {/* Debug Contracts Card */}
-            <Card
-              icon={isDarkMode ? <DarkBugAntIcon /> : <LightBugAntIcon />}
-              description={<>Tinker with your smart contract using the</>}
-              linkHref="/debug"
-              linkText="Debug Contracts"
-              isDarkMode={isDarkMode}
-            />
-            {/* Block Explorer Card */}
-            <Card
-              icon={<CompassIcon />}
-              description={<>Explore your local transactions with the</>}
-              linkHref="/blockexplorer"
-              linkText="Block Explorer"
-              isDarkMode={isDarkMode}
-            />
+      {!address ? (
+        <PideBilletera que="Para ver tus juntas necesitamos saber quién eres." />
+      ) : isLoading ? (
+        <Cargando que="Buscando tus juntas" />
+      ) : !misJuntas || misJuntas.length === 0 ? (
+        <Vacio
+          titulo="Todavía no estás en ninguna junta"
+          detalle={
+            "Puedes crear una con las direcciones de tu grupo, o pedirle a quien organiza la " +
+            "tuya que te agregue. Los miembros se definen al crearla, igual que en una junta de verdad."
+          }
+          accion={
+            <div className="flex flex-wrap gap-3">
+              <Link href="/crear" className="k-boton no-underline">
+                Crear una junta
+              </Link>
+              {Number(totalJuntas ?? 0) > 0 && (
+                <Link href="/auditar/0" className="k-boton-borde no-underline">
+                  Auditar una junta
+                </Link>
+              )}
+            </div>
+          }
+        />
+      ) : (
+        <>
+          <div className="mb-8 grid gap-4 sm:grid-cols-2">
+            {misJuntas.map(id => (
+              <TarjetaDeJunta key={Number(id)} juntaId={Number(id)} miembro={address} />
+            ))}
           </div>
+          <div className="flex flex-wrap gap-3">
+            <Link href="/crear" className="k-boton-borde no-underline">
+              Crear otra junta
+            </Link>
+          </div>
+        </>
+      )}
+
+      {/* Qué es esto, para quien llega sin contexto. */}
+      <section className="mt-16 border-t border-[--color-linea] pt-12">
+        <div className="grid gap-8 sm:grid-cols-3">
+          <Explicacion
+            titulo="El contrato custodia"
+            texto="Cada cuota entra al contrato y solo sale por la regla del turno. No existe un retiro de administrador."
+          />
+          <Explicacion
+            titulo="Tu puntualidad vale"
+            texto="Un modelo de crédito corre dentro de Arbitrum y lee tu historial. El score no lo calcula nuestro servidor."
+          />
+          <Explicacion
+            titulo="Cualquiera audita"
+            texto="La contabilidad del contrato se compara con el saldo real del token. Si no cuadrara, se vería."
+          />
         </div>
-      </div>
-    </>
+      </section>
+    </Marco>
   );
 };
 
-export default Home;
+const Explicacion = ({ titulo, texto }: { titulo: string; texto: string }) => (
+  <div>
+    <Isotipo size={22} className="mb-4" />
+    <h3 className="k-voz mb-2 text-base font-bold">{titulo}</h3>
+    <p className="text-sm leading-relaxed text-[--color-gris]">{texto}</p>
+  </div>
+);
+
+export default Portada;

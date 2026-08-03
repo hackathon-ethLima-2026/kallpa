@@ -7,9 +7,9 @@ import { GenericContractsDeclaration } from "../utils/scaffold-eth/contract";
 const deployedContracts = {
   "421614": {
     mock_usdc: {
-      address: "0x59f60cbebb1c80aadba60e32f62db15793ef31d1",
+      address: "0x241f74fed26ad33fc5de7d3197d56f14824139da",
       txHash:
-        "0xaf4f4238e29e01c48148bba4ea31d4af5fc7d52c645a3c6e37828bb542beed14",
+        "0x237cf5cc4455b8475589cda070837d80fce3603e7194787f29ea10bac7978810",
       abi: [
         {
           inputs: [
@@ -262,9 +262,9 @@ const deployedContracts = {
       ],
     },
     junta: {
-      address: "0xe9827da24e746a68df6f812799f9673e539e4fbb",
+      address: "0x66eb72055b8eba05fec5f221eb0c8b58814fb3a8",
       txHash:
-        "0x98d3b219a6d7376232ca3f8d6a5bcad81244f21afabb4f95625a0229acf4090a",
+        "0xe3cc1b6e025d1d471330f9f23d88d5428144fb2a5fe4d610cf9e7053ddd5fcdc",
       abi: [
         {
           inputs: [
@@ -348,6 +348,11 @@ const deployedContracts = {
         },
         {
           inputs: [
+            {
+              internalType: "string",
+              name: "nombre",
+              type: "string",
+            },
             {
               internalType: "address[]",
               name: "miembros",
@@ -503,6 +508,64 @@ const deployedContracts = {
               type: "uint32",
             },
           ],
+          name: "juntaNombre",
+          outputs: [
+            {
+              internalType: "string",
+              name: "",
+              type: "string",
+            },
+          ],
+          stateMutability: "view",
+          type: "function",
+        },
+        {
+          inputs: [
+            {
+              internalType: "uint32",
+              name: "junta_id",
+              type: "uint32",
+            },
+          ],
+          name: "juntaParams",
+          outputs: [
+            {
+              internalType: "uint256",
+              name: "",
+              type: "uint256",
+            },
+            {
+              internalType: "uint64",
+              name: "",
+              type: "uint64",
+            },
+            {
+              internalType: "uint64",
+              name: "",
+              type: "uint64",
+            },
+            {
+              internalType: "uint32",
+              name: "",
+              type: "uint32",
+            },
+            {
+              internalType: "bool",
+              name: "",
+              type: "bool",
+            },
+          ],
+          stateMutability: "view",
+          type: "function",
+        },
+        {
+          inputs: [
+            {
+              internalType: "uint32",
+              name: "junta_id",
+              type: "uint32",
+            },
+          ],
           name: "juntaState",
           outputs: [
             {
@@ -534,6 +597,69 @@ const deployedContracts = {
               internalType: "uint256",
               name: "",
               type: "uint256",
+            },
+          ],
+          stateMutability: "view",
+          type: "function",
+        },
+        {
+          inputs: [
+            {
+              internalType: "address",
+              name: "member",
+              type: "address",
+            },
+          ],
+          name: "juntasDe",
+          outputs: [
+            {
+              internalType: "uint32[]",
+              name: "",
+              type: "uint32[]",
+            },
+          ],
+          stateMutability: "view",
+          type: "function",
+        },
+        {
+          inputs: [
+            {
+              internalType: "uint32",
+              name: "junta_id",
+              type: "uint32",
+            },
+            {
+              internalType: "address",
+              name: "member",
+              type: "address",
+            },
+          ],
+          name: "memberState",
+          outputs: [
+            {
+              internalType: "bool",
+              name: "",
+              type: "bool",
+            },
+            {
+              internalType: "uint32",
+              name: "",
+              type: "uint32",
+            },
+            {
+              internalType: "uint32",
+              name: "",
+              type: "uint32",
+            },
+            {
+              internalType: "bool",
+              name: "",
+              type: "bool",
+            },
+            {
+              internalType: "uint32",
+              name: "",
+              type: "uint32",
             },
           ],
           stateMutability: "view",
@@ -633,9 +759,9 @@ const deployedContracts = {
       ],
     },
     score_engine: {
-      address: "0x7f7de18a87ee4e855dd35fe7733a6a2b8ceb5ba4",
+      address: "0x6b6f385246672c6eb8defb7c4debcb4f1bd45158",
       txHash:
-        "0xd2c77a299116af256e31f06949a60856a5d2f288bf77c1fa19bef3c6211ae707",
+        "0x0a9172021d6d174f993a1f4670fcb3590db287303d4bb5cee8de65f39edf85fd",
       abi: [
         {
           inputs: [
@@ -843,9 +969,9 @@ const deployedContracts = {
       ],
     },
     pool: {
-      address: "0x0e50bf501abafe781736a560215c706534a3a65d",
+      address: "0x9e1a4a0f4653457bf8c7032a78f6735489b67c75",
       txHash:
-        "0xf6d329e0ec83be34b2377ef93c2b4fd9bc9ffe1f39bb0443d9ef7d8f7620ce76",
+        "0x336e9061e327e4d46ed3386176282a9a7d0990b9921908f8c14049bd0f3461bc",
       abi: [
         {
           inputs: [

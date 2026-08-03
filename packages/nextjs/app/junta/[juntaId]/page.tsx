@@ -1,0 +1,290 @@
+"use client";
+
+/**
+ * El detalle de una junta: lo que un miembro hace de verdad, no lo que se le muestra.
+ *
+ * Aquí ocurre la única acción que mueve dinero desde el lado del usuario —pagar la cuota— y
+ * por eso es donde más fácil se rompe la experiencia. Un token exige autorizar antes de que
+ * un contrato pueda cobrar, así que pagar son dos transacciones y no una. En vez de esconder
+ * ese detalle o mostrar dos botones sin explicación, la pantalla lo dice: primero autorizas
+ * una vez, después pagas las veces que haga falta.
+ */
+
+import { use, useState } from "react";
+import Link from "next/link";
+import { useAccount } from "wagmi";
+import { RuedaDeJunta } from "~~/components/kallpa/Isotipo";
+import { Cargando, Marco, PideBilletera, Titulo, Vacio } from "~~/components/kallpa/Marco";
+import { Address } from "~~/components/scaffold-eth";
+import { useScaffoldReadContract, useScaffoldWriteContract } from "~~/hooks/scaffold-eth";
+
+const mUSDC = (v: bigint | undefined) =>
+  v === undefined ? "—" : (Number(v) / 1e6).toLocaleString("es-PE", { maximumFractionDigits: 2 });
+
+export default function DetalleDeJunta({ params }: { params: Promise<{ juntaId: string }> }) {
+  const { juntaId } = use(params);
+  const id = Number(juntaId);
+  const { address } = useAccount();
+  const [trabajando, setTrabajando] = useState<string | null>(null);
+
+  const { data: nombre } = useScaffoldReadContract({
+    contractName: "junta",
+    functionName: "juntaNombre",
+    args: [id],
+  });
+  const { data: info } = useScaffoldReadContract({
+    contractName: "junta",
+    functionName: "juntaParams",
+    args: [id],
+  });
+  const { data: estado, refetch: releerEstado } = useScaffoldReadContract({
+    contractName: "junta",
+    functionName: "juntaState",
+    args: [id],
+  });
+  const { data: miEstado, refetch: releerMiEstado } = useScaffoldReadContract({
+    contractName: "junta",
+    functionName: "memberState",
+    args: [id, address],
+  });
+  const { data: listaMiembros } = useScaffoldReadContract({
+    contractName: "junta",
+    functionName: "miembros",
+    args: [id],
+  });
+  const { data: contratoJunta } = useScaffoldReadContract({
+    contractName: "junta",
+    functionName: "token",
+  });
+  const { data: saldo } = useScaffoldReadContract({
+    contractName: "mock_usdc",
+    functionName: "balanceOf",
+    args: [address],
+  });
+
+  const { writeContractAsync: escribirJunta } = useScaffoldWriteContract({ contractName: "junta" });
+  const { writeContractAsync: escribirToken } = useScaffoldWriteContract({
+    contractName: "mock_usdc",
+  });
+
+  const cuota = info?.[0] as bigint | undefined;
+  const totalMiembros = info?.[3];
+  const existe = info?.[4];
+  const [pozo, ciclo, turno] = estado ?? [];
+  const [esMiembro, cuotasPagadas, miTurno, yaCobro, debe] = miEstado ?? [];
+
+  if (!info) return <Marco><Cargando /></Marco>;
+  if (!existe) {
+    return (
+      <Marco>
+        <Vacio
+          titulo="Esta junta no existe"
+          detalle={`El contrato no tiene ninguna junta con el número ${juntaId}.`}
+          accion={
+            <Link href="/" className="k-boton no-underline">
+              Volver a mis juntas
+            </Link>
+          }
+        />
+      </Marco>
+    );
+  }
+
+  const miembros = Number(totalMiembros ?? 0);
+  const cicloActual = Number(ciclo ?? 0);
+  const terminada = cicloActual >= miembros;
+  const turnoActual = Number(turno ?? 0);
+  const meTocaCobrar = Number(miTurno ?? -1) === turnoActual && !terminada;
+  const puedeRepartir = cicloActual > turnoActual && turnoActual < miembros;
+  const saldoInsuficiente = saldo !== undefined && cuota !== undefined && saldo < cuota;
+
+  /**
+   * Autorizar y pagar. El token exige lo primero antes de permitir lo segundo, así que se
+   * autoriza un margen amplio de una sola vez para que las cuotas siguientes sean un solo
+   * paso en lugar de dos.
+   */
+  const pagarCuota = async () => {
+    if (!cuota) return;
+    try {
+      setTrabajando("Autorizando al contrato…");
+      await escribirToken({
+        functionName: "approve",
+        args: [contratoJunta as `0x${string}`, cuota * 24n],
+      });
+      setTrabajando("Pagando la cuota…");
+      await escribirJunta({ functionName: "deposit", args: [id] });
+      await Promise.all([releerEstado(), releerMiEstado()]);
+    } finally {
+      setTrabajando(null);
+    }
+  };
+
+  const cobrarTurno = async () => {
+    try {
+      setTrabajando("Cobrando el pozo…");
+      await escribirJunta({ functionName: "distribute", args: [id] });
+      await Promise.all([releerEstado(), releerMiEstado()]);
+    } finally {
+      setTrabajando(null);
+    }
+  };
+
+  return (
+    <Marco>
+      <Titulo
+        rotulo={`Junta #${juntaId}`}
+        titulo={(nombre as string) || `Junta #${juntaId}`}
+        bajada={
+          terminada ? (
+            <>
+              Esta junta ya <span className="text-[--color-oro]">terminó</span>: todos cobraron
+              su turno y su historial quedó fijo para siempre.
+            </>
+          ) : (
+            <>
+              Ciclo {cicloActual + 1} de {miembros}.{" "}
+              <span className="text-[--color-oro]">{mUSDC(cuota)} mUSDC</span> por cuota.
+            </>
+          )
+        }
+      />
+
+      <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
+        <div className="flex flex-col gap-6">
+          {/* ── Lo que te toca hacer ─────────────────────────────────────────────── */}
+          {!address ? (
+            <PideBilletera que="Para pagar tu cuota o cobrar tu turno." />
+          ) : !esMiembro ? (
+            <div className="k-tarjeta p-8">
+              <p className="k-voz mb-2 text-lg">No perteneces a esta junta</p>
+              <p className="text-[--color-gris]">
+                Puedes mirar su estado y auditarla, pero solo sus miembros pueden aportar. Los
+                miembros se definen al crear la junta, igual que en una de verdad.
+              </p>
+            </div>
+          ) : (
+            <div className="k-tarjeta p-8">
+              <p className="k-rotulo mb-4">Tu situación</p>
+              <div className="mb-6 grid grid-cols-2 gap-6 sm:grid-cols-3">
+                <Dato termino="Cuotas pagadas" valor={`${Number(cuotasPagadas ?? 0)} de ${miembros}`} />
+                <Dato
+                  termino="Tu turno"
+                  valor={yaCobro ? "ya cobraste" : `${Number(miTurno ?? 0) + 1}º`}
+                />
+                <Dato
+                  termino="Debes"
+                  valor={Number(debe ?? 0) === 0 ? "nada" : `${Number(debe)} cuotas`}
+                  alerta={Number(debe ?? 0) > 0}
+                />
+              </div>
+
+              {trabajando ? (
+                <p className="k-meta">{trabajando.toUpperCase()}</p>
+              ) : (
+                <div className="flex flex-wrap gap-3">
+                  {!terminada && (
+                    <button
+                      className="k-boton"
+                      onClick={pagarCuota}
+                      disabled={saldoInsuficiente || Number(cuotasPagadas ?? 0) >= miembros}
+                    >
+                      Pagar mi cuota
+                    </button>
+                  )}
+                  {meTocaCobrar && puedeRepartir && (
+                    <button className="k-boton-borde" onClick={cobrarTurno}>
+                      Cobrar mi turno
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {saldoInsuficiente && !trabajando && (
+                <p className="mt-4 text-sm text-[--color-mal]">
+                  No te alcanza el saldo: tienes {mUSDC(saldo)} mUSDC y la cuota es{" "}
+                  {mUSDC(cuota)}.
+                </p>
+              )}
+              {Number(cuotasPagadas ?? 0) >= miembros && (
+                <p className="mt-4 text-sm text-[--color-gris]">
+                  Ya pagaste todas tus cuotas de esta junta. No hay nada pendiente.
+                </p>
+              )}
+            </div>
+          )}
+
+          {/* ── Quiénes son ──────────────────────────────────────────────────────── */}
+          <div className="k-tarjeta p-8">
+            <p className="k-rotulo mb-4">Miembros y turnos</p>
+            <ul className="flex flex-col gap-1">
+              {(listaMiembros ?? []).map((m, i) => {
+                const cobro = i < turnoActual;
+                const leToca = i === turnoActual && !terminada;
+                return (
+                  <li
+                    key={m}
+                    className={`flex items-center justify-between gap-3 rounded-[4px] px-3 py-2.5 ${
+                      leToca ? "bg-[--color-noche]" : ""
+                    }`}
+                  >
+                    <span className="flex items-center gap-3">
+                      <span
+                        className="inline-block h-3 w-3 shrink-0 rounded-full"
+                        style={{
+                          background: cobro ? "#F0B429" : "transparent",
+                          border: cobro ? "none" : "1.5px solid #F0B429",
+                        }}
+                      />
+                      <Address address={m} size="sm" />
+                    </span>
+                    <span className="k-prueba text-xs text-[--color-gris]">
+                      {cobro ? "cobró" : leToca ? "le toca" : `turno ${i + 1}º`}
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        </div>
+
+        {/* ── La junta de un vistazo ─────────────────────────────────────────────── */}
+        <aside className="flex flex-col gap-6">
+          <div className="k-tarjeta flex flex-col items-center gap-5 p-8">
+            <RuedaDeJunta miembros={miembros} turnosCobrados={turnoActual} size={150} />
+            <p className="text-center text-sm leading-relaxed text-[--color-gris]">
+              Cada punto es un miembro. Relleno, ya cobró; en contorno, espera su turno.
+            </p>
+          </div>
+
+          <div className="k-tarjeta p-6">
+            <Dato termino="En el pozo" valor={`${mUSDC(pozo)} mUSDC`} />
+            <div className="mt-5">
+              <Dato termino="Turnos repartidos" valor={`${turnoActual} de ${miembros}`} />
+            </div>
+          </div>
+
+          <Link href={`/auditar/${juntaId}`} className="k-boton-borde text-center no-underline">
+            Auditar esta junta
+          </Link>
+        </aside>
+      </div>
+    </Marco>
+  );
+}
+
+const Dato = ({
+  termino,
+  valor,
+  alerta,
+}: {
+  termino: string;
+  valor: string;
+  alerta?: boolean;
+}) => (
+  <div>
+    <p className="k-meta mb-1">{termino.toUpperCase()}</p>
+    <p className={`k-prueba text-lg ${alerta ? "text-[--color-mal]" : "text-[--color-marfil]"}`}>
+      {valor}
+    </p>
+  </div>
+);

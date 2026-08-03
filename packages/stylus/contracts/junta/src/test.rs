@@ -50,7 +50,7 @@ fn junta_de(n: u8) -> (TestVM, Junta, Vec<Address>) {
 
     let miembros: Vec<Address> = (1..=n).map(miembro).collect();
     contrato
-        .create_junta(miembros.clone(), U256::from(CUOTA), PERIODO)
+        .create_junta("Las Emprendedoras".into(), miembros.clone(), U256::from(CUOTA), PERIODO)
         .unwrap();
     (vm, contrato, miembros)
 }
@@ -317,13 +317,13 @@ fn una_junta_necesita_miembros_cuota_y_periodo() {
     c.constructor(TOKEN);
 
     assert!(c
-        .create_junta(alloc::vec![], U256::from(CUOTA), PERIODO)
+        .create_junta("Sin nadie".into(), alloc::vec![], U256::from(CUOTA), PERIODO)
         .is_err());
     assert!(c
-        .create_junta(alloc::vec![miembro(1)], U256::ZERO, PERIODO)
+        .create_junta("Sin cuota".into(), alloc::vec![miembro(1)], U256::ZERO, PERIODO)
         .is_err());
     assert!(c
-        .create_junta(alloc::vec![miembro(1)], U256::from(CUOTA), 0)
+        .create_junta("Sin periodo".into(), alloc::vec![miembro(1)], U256::from(CUOTA), 0)
         .is_err());
 }
 
@@ -344,7 +344,7 @@ fn cada_junta_lleva_su_propia_cuenta() {
     // El contrato alberga muchas juntas y el historial es del par (junta, miembro), así
     // que lo que pasa en una no puede contaminar a la otra.
     let (vm, mut c, m) = junta_de(4);
-    c.create_junta(m.clone(), U256::from(CUOTA), PERIODO * 10)
+    c.create_junta("La lenta".into(), m.clone(), U256::from(CUOTA), PERIODO * 10)
         .unwrap();
 
     vm.set_block_timestamp(INICIO + 3 * PERIODO);
@@ -354,4 +354,75 @@ fn cada_junta_lleva_su_propia_cuenta() {
 
     assert_eq!(en_la_rapida, 3);
     assert_eq!(en_la_lenta, 0, "sus ciclos duran diez veces más");
+}
+
+// =====================================================================================
+// Lo que una aplicación necesita saber
+// =====================================================================================
+
+#[test]
+fn la_junta_recuerda_con_que_parametros_nacio() {
+    // Sin esto, una interfaz no puede decirle a nadie cuánto debe pagar ni cuándo vence,
+    // que son las dos preguntas que cualquiera se hace antes que ninguna otra.
+    let (_vm, c, _m) = junta_de(8);
+    let (cuota, periodo, inicio, miembros, existe) = c.junta_params(0);
+
+    assert_eq!(c.junta_nombre(0), "Las Emprendedoras");
+    assert_eq!(cuota, U256::from(CUOTA));
+    assert_eq!(periodo, PERIODO);
+    assert_eq!(inicio, INICIO);
+    assert_eq!(miembros, 8);
+    assert!(existe);
+}
+
+#[test]
+fn una_junta_inexistente_se_reconoce_como_tal() {
+    let (_vm, c, _m) = junta_de(4);
+    let (_, _, _, _, existe) = c.junta_params(99);
+    assert!(!existe);
+}
+
+#[test]
+fn cada_miembro_puede_saber_en_que_juntas_esta() {
+    // Es la primera pantalla de la aplicación. Deducirlo recorriendo todas las juntas
+    // costaría una lectura por cada una que exista en el contrato.
+    let (_vm, mut c, m) = junta_de(4);
+    c.create_junta(
+        "Los del Mercado".into(),
+        alloc::vec![m[0], m[1]],
+        U256::from(CUOTA),
+        PERIODO,
+    )
+    .unwrap();
+
+    assert_eq!(c.juntas_de(m[0]), alloc::vec![0, 1], "está en las dos");
+    assert_eq!(c.juntas_de(m[2]), alloc::vec![0], "solo en la primera");
+    assert!(
+        c.juntas_de(miembro(200)).is_empty(),
+        "quien no pertenece a ninguna no ve ninguna"
+    );
+}
+
+#[test]
+fn el_estado_de_un_miembro_dice_si_le_toca_pagar() {
+    let (vm, c, m) = junta_de(4);
+
+    let (es_miembro, pagadas, turno, ya_cobro, debe) = c.member_state(0, m[2]);
+    assert!(es_miembro);
+    assert_eq!(pagadas, 0);
+    assert_eq!(turno, 2, "su turno es su posición en la lista");
+    assert!(!ya_cobro);
+    assert_eq!(debe, 0, "todavía no vence ningún ciclo");
+
+    vm.set_block_timestamp(INICIO + 2 * PERIODO);
+    let (_, _, _, _, debe_despues) = c.member_state(0, m[2]);
+    assert_eq!(debe_despues, 2, "dos ciclos vencidos sin pagar");
+}
+
+#[test]
+fn quien_no_es_miembro_se_distingue_del_que_si() {
+    let (_vm, c, _m) = junta_de(4);
+    let (es_miembro, _, turno, _, _) = c.member_state(0, miembro(200));
+    assert!(!es_miembro);
+    assert_eq!(turno, u32::MAX, "no tiene turno asignado");
 }

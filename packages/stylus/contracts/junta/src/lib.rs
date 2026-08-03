@@ -27,6 +27,7 @@
 #[macro_use]
 extern crate alloc;
 
+use alloc::string::String;
 use alloc::vec::Vec;
 
 use stylus_sdk::{
@@ -130,6 +131,10 @@ sol_storage! {
 
     pub struct JuntaData {
         bool existe;
+        // El nombre vive en la cadena y no en la interfaz. Una junta es un grupo de
+        // personas que se conocen: si el nombre solo existiera en el frontend, cada
+        // aplicación que leyera este contrato mostraría algo distinto, o nada.
+        string nombre;
         uint256 cuota;
         uint64 periodo;
         uint64 start_at;
@@ -150,6 +155,10 @@ sol_storage! {
         uint256 aportado_global;
         uint256 distribuido_global;
         mapping(uint32 => JuntaData) juntas;
+        // A qué juntas pertenece cada dirección. Se escribe una vez por miembro al crear
+        // la junta, y evita que la aplicación tenga que recorrer todas las juntas
+        // existentes para responder la pregunta más básica de todas: "¿en cuáles estoy?".
+        mapping(address => uint32[]) juntas_por_miembro;
     }
 }
 
@@ -249,6 +258,7 @@ impl Junta {
     /// junta termina cuando todos cobraron una vez.
     pub fn create_junta(
         &mut self,
+        nombre: String,
         miembros: Vec<Address>,
         cuota: U256,
         periodo: u64,
@@ -263,6 +273,7 @@ impl Junta {
 
         let mut j = self.juntas.setter(U32::from(junta_id));
         j.existe.set(true);
+        j.nombre.set_str(&nombre);
         j.cuota.set(cuota);
         j.periodo.set(U64::from(periodo));
         j.start_at.set(U64::from(ahora));
@@ -270,6 +281,9 @@ impl Junta {
         for m in miembros.iter() {
             j.miembros.push(*m);
             j.estado.setter(*m).es_miembro.set(true);
+        }
+        for m in miembros.iter() {
+            self.juntas_por_miembro.setter(*m).push(U32::from(junta_id));
         }
 
         self.total_juntas.set(U32::from(junta_id + 1));
@@ -607,6 +621,83 @@ impl Junta {
             j.miembros.len() as u32,
             aportado,
             distribuido,
+        )
+    }
+
+    /// El nombre de la junta.
+    ///
+    /// Va en su propia función y no junto a los demás parámetros por una razón concreta del
+    /// entorno: cuando una función devuelve varios valores y **mezcla** un tipo dinámico
+    /// —un texto— con tipos de tamaño fijo, la interfaz que `cargo stylus export-abi` emite
+    /// no describe los bytes que el contrato realmente devuelve. El contrato envuelve todo
+    /// en una tupla adicional que la firma exportada no menciona, así que cualquiera que
+    /// consuma esa interfaz falla al descifrar la respuesta.
+    ///
+    /// Devolver un único valor dinámico, o varios valores todos de tamaño fijo, sí funciona.
+    /// Partir la consulta en dos mantiene la interfaz publicada fiel a la realidad, que es
+    /// lo que importa cuando el objetivo del proyecto es justamente ser verificable.
+    pub fn junta_nombre(&self, junta_id: u32) -> String {
+        self.juntas.get(U32::from(junta_id)).nombre.get_string()
+    }
+
+    /// Los parámetros con los que nació la junta:
+    /// `(cuota, periodo, inicio, miembros, existe)`.
+    ///
+    /// Sin esto una aplicación no puede decirle a nadie cuánto debe pagar ni cuándo vence,
+    /// que son las dos preguntas que cualquiera se hace antes que ninguna otra.
+    pub fn junta_params(&self, junta_id: u32) -> (U256, u64, u64, u32, bool) {
+        let j = self.juntas.get(U32::from(junta_id));
+        (
+            j.cuota.get(),
+            j.periodo.get().to::<u64>(),
+            j.start_at.get().to::<u64>(),
+            j.miembros.len() as u32,
+            j.existe.get(),
+        )
+    }
+
+    /// En qué juntas participa una dirección.
+    ///
+    /// Se mantiene como índice al crear la junta en lugar de deducirse recorriendo todo,
+    /// porque "¿en cuáles estoy?" es la primera pantalla de la aplicación y no puede costar
+    /// una lectura por cada junta que exista en el contrato.
+    pub fn juntas_de(&self, member: Address) -> Vec<u32> {
+        let lista = self.juntas_por_miembro.get(member);
+        let mut salida = Vec::new();
+        for i in 0..lista.len() {
+            salida.push(lista.get(i).unwrap_or(U32::ZERO).to::<u32>());
+        }
+        salida
+    }
+
+    /// La situación de un miembro dentro de una junta:
+    /// `(es_miembro, cuotas_pagadas, turno_asignado, ya_cobro, cuotas_que_debe)`.
+    ///
+    /// Es lo que hace falta para responder "¿me toca pagar?" sin obligar a la aplicación a
+    /// reconstruirlo desde las señales del historial, que están pensadas para el modelo de
+    /// crédito y no para la interfaz.
+    pub fn member_state(&self, junta_id: u32, member: Address) -> (bool, u32, u32, bool, u32) {
+        let ciclos = self.ciclos_transcurridos(junta_id);
+        let j = self.juntas.get(U32::from(junta_id));
+        let e = j.estado.get(member);
+
+        let pagadas = e.cuotas_pagadas.get().to::<u32>();
+
+        // El turno de cada quien es su posición en la lista de miembros.
+        let mut turno = u32::MAX;
+        for i in 0..j.miembros.len() {
+            if j.miembros.get(i).unwrap_or(Address::ZERO) == member {
+                turno = i as u32;
+                break;
+            }
+        }
+
+        (
+            e.es_miembro.get(),
+            pagadas,
+            turno,
+            e.ya_cobro.get(),
+            ciclos.saturating_sub(pagadas),
         )
     }
 
