@@ -1,0 +1,14 @@
+# Lo que no tiene por que viajar al servidor que compila el frontend.
+#
+# El despliegue sube el repositorio entero a proposito —hace falta para que `yarn install`
+# resuelva contra el candado de la raiz—, pero nada de esto participa en esa compilacion.
+# Sin la primera linea el envio pesa gigabytes: son los artefactos de compilacion de Rust.
+
+packages/stylus/target
+packages/ai-model/__pycache__
+packages/ai-model/*.csv
+packages/ai-model/*.pkl
+packages/ai-model/.venv
+
+**/node_modules
+**/.next

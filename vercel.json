@@ -1,0 +1,6 @@
+{
+  "framework": "nextjs",
+  "installCommand": "yarn install --immutable",
+  "buildCommand": "yarn workspace @ss/nextjs build",
+  "outputDirectory": "packages/nextjs/.next"
+}
