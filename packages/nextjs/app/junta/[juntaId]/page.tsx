@@ -15,6 +15,7 @@ import Link from "next/link";
 import { useAccount } from "wagmi";
 import { Dato } from "~~/components/kallpa/Dato";
 import { RuedaDeJunta } from "~~/components/kallpa/Isotipo";
+import { BotonConseguirFondos } from "~~/components/kallpa/Fondos";
 import { Cargando, Marco, PideBilletera, Titulo, Vacio } from "~~/components/kallpa/Marco";
 import { mUSDC } from "~~/components/kallpa/cifras";
 import { Address } from "~~/components/scaffold-eth";
@@ -207,10 +208,15 @@ export default function DetalleDeJunta({ params }: { params: Promise<{ juntaId: 
               )}
 
               {saldoInsuficiente && !trabajando && (
-                <p className="mt-4 text-sm text-[--color-mal]">
-                  No te alcanza el saldo: tienes {mUSDC(saldo)} mUSDC y la cuota es{" "}
-                  {mUSDC(cuota)}.
-                </p>
+                <div className="mt-5 border-t border-[--color-linea] pt-5">
+                  <p className="mb-4 text-sm text-[--color-mal]">
+                    No te alcanza el saldo: tienes {mUSDC(saldo)} mUSDC y la cuota es{" "}
+                    {mUSDC(cuota)}.
+                  </p>
+                  {/* La salida va aquí mismo y no en otra pantalla: quedarse sin fondos a un
+                      paso de pagar es el momento en que más fácil se abandona. */}
+                  <BotonConseguirFondos />
+                </div>
               )}
               {Number(cuotasPagadas ?? 0) >= miembros && (
                 <p className="mt-4 text-sm text-[--color-gris]">

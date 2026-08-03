@@ -18,6 +18,8 @@ const SECCIONES = [
   { href: "/", texto: "Mis juntas" },
   { href: "/mi-score", texto: "Mi score" },
   { href: "/pedir-credito", texto: "Crédito" },
+  // El otro lado del producto: quien pone el capital no es quien pide el préstamo.
+  { href: "/fondear", texto: "Fondear" },
 ];
 
 export const Marco = ({ children }: { children: React.ReactNode }) => {
