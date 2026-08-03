@@ -7,6 +7,9 @@ node_modules
 *.pem
 *.key
 
+# artefactos de compilacion
+packages/stylus/dist/
+
 # artefactos de compilacion de Stylus
 target/
 **/target/
