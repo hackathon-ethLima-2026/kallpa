@@ -39,7 +39,9 @@ export async function exportStylusAbi(
 
     // Export ABI
     // cwd is now contracts/<contract>/, so ../../ reaches packages/stylus/
-    const exportCommand = `cargo stylus export-abi --output='../../${config.deploymentDir}/${config.contractFolder}' --json`;
+    // Comillas dobles, no simples: en Windows el comando corre por cmd.exe, que no
+    // interpreta las simples y se las pasa literales. Ver la misma nota en utils/command.ts.
+    const exportCommand = `cargo stylus export-abi --output="../../${config.deploymentDir}/${config.contractFolder}" --json`;
     await executeCommand(exportCommand, fsPath, "Exporting ABI");
 
     console.log(

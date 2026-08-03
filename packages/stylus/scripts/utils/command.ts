@@ -42,7 +42,12 @@ export async function buildDeployCommand(
   config: DeploymentConfig,
   deployOptions: DeployOptions,
 ) {
-  let baseCommand = `cargo stylus deploy --endpoint='${getRpcUrlFromChain(config.chain)}' --private-key='${config.privateKey}'`;
+  // Comillas dobles y no simples: en Windows `spawn` con `shell: true` usa cmd.exe, que
+  // no interpreta comillas simples y se las pasa literales al programa. cargo-stylus
+  // recibia entonces el endpoint entre comillas y fallaba con "relative URL without a
+  // base", un mensaje que no se parece en nada a su causa. Las dobles funcionan igual en
+  // cmd.exe y en las shells de Unix.
+  let baseCommand = `cargo stylus deploy --endpoint="${getRpcUrlFromChain(config.chain)}" --private-key="${config.privateKey}"`;
 
   if (deployOptions.estimateGas) {
     return `${baseCommand} --estimate-gas`;
@@ -87,9 +92,9 @@ export async function estimateGasPrice(
   config: DeploymentConfig,
   deployOptions: DeployOptions,
 ): Promise<string> {
-  let deployCommand = `cargo stylus deploy --endpoint='${getRpcUrlFromChain(config.chain)}' --private-key='${config.privateKey}' --no-verify --estimate-gas `;
+  let deployCommand = `cargo stylus deploy --endpoint="${getRpcUrlFromChain(config.chain)}" --private-key="${config.privateKey}" --no-verify --estimate-gas `;
   if (deployOptions.constructorArgs) {
-    deployCommand += ` --constructor-args='${deployOptions.constructorArgs.join(" ")}'`;
+    deployCommand += ` --constructor-args="${deployOptions.constructorArgs.join(" ")}"`;
   }
   const deployOutput = await executeCommand(
     deployCommand,
