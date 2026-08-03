@@ -13,6 +13,17 @@
     "vercel": "vercel",
     "vercel:yolo": "vercel --build-env NEXT_PUBLIC_IGNORE_BUILD_ERROR=true"
   },
+  "//resolutions": [
+    "Vercel compila esta carpeta por separado, sin el candado de la raiz, asi que resuelve",
+    "las versiones frescas en vez de las que estan probadas aqui. Las versiones nuevas de",
+    "@coinbase/cdp-sdk —que entra por el conector de billetera de RainbowKit— importan",
+    "@x402/*, paquetes que nadie declara, y la compilacion muere con ocho 'Module not found'.",
+    "Esta linea fija la version que el candado de la raiz ya tiene probada. Yarn 3 la ignora",
+    "en un paquete hijo, asi que no cambia nada en local: solo actua en el servidor."
+  ],
+  "resolutions": {
+    "@coinbase/cdp-sdk": "1.51.0"
+  },
   "dependencies": {
     "@heroicons/react": "^2.2.0",
     "@rainbow-me/rainbowkit": "2.2.9",
