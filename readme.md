@@ -45,6 +45,7 @@ Las direcciones desplegadas y sus enlaces a Arbiscan viven en [`docs/addresses.m
 Si es tu primera vez aquí, entra por **[`docs/empezar-aqui.md`](./docs/empezar-aqui.md)**: te deja corriendo en cinco minutos y te dice qué leer después.
 
 - **[`docs/empezar-aqui.md`](./docs/empezar-aqui.md)** — bajar el proyecto y correrlo. Las trampas del entorno en Windows.
+- **[`docs/validacion-de-la-aplicacion.md`](./docs/validacion-de-la-aplicacion.md)** — qué problema resuelve, para qué existe cada pantalla y qué está terminado. Con lo que falta, dicho sin maquillar.
 - **[`docs/flujos-de-usuario.md`](./docs/flujos-de-usuario.md)** — los tres actores y qué hace cada pantalla. Sin esto la interfaz parece arbitraria.
 - **[`docs/como-probarlo.md`](./docs/como-probarlo.md)** — probarlo con las manos, con una billetera de verdad. Incluye el estado sembrado en la cadena.
 - **[`CONTEXT.md`](./CONTEXT.md)** — el glosario del dominio. Qué es una junta, un ciclo, un default, la mora post-cobro. Léelo primero: el código usa estos términos y no otros.

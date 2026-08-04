@@ -18,10 +18,10 @@ Entregable oficial del hackathon.
 
 | Contrato | Transacción |
 |---|---|
-| `mock_usdc` | [`0xaf4f4238…eed14`](https://sepolia.arbiscan.io/tx/0x913b11ec1ff5d7ad54d53e1925d2afabdbdb3770b901fce99dc499914e2b06a8) |
-| `junta` | [`0x071985fd…d5fcdc`](https://sepolia.arbiscan.io/tx/0x071985fdb4e294bb34343b1f994bff003b6299cf05d36af28e84613c4c4ae334) |
-| `score_engine` | [`0x8c094ce1…df85fd`](https://sepolia.arbiscan.io/tx/0x8c094ce19af669980b3dc544c5e80a5b1fed3e394579a6bcfea00061b1ded676) |
-| `pool` | [`0x299df321…3461bc`](https://sepolia.arbiscan.io/tx/0x299df3216a09efab68711c46469abb15b1b3b36fee442d8754e9ce8f97e643e7) |
+| `mock_usdc` | [`0x913b11ec…2b06a8`](https://sepolia.arbiscan.io/tx/0x913b11ec1ff5d7ad54d53e1925d2afabdbdb3770b901fce99dc499914e2b06a8) |
+| `junta` | [`0x071985fd…4ae334`](https://sepolia.arbiscan.io/tx/0x071985fdb4e294bb34343b1f994bff003b6299cf05d36af28e84613c4c4ae334) |
+| `score_engine` | [`0x8c094ce1…ded676`](https://sepolia.arbiscan.io/tx/0x8c094ce19af669980b3dc544c5e80a5b1fed3e394579a6bcfea00061b1ded676) |
+| `pool` | [`0x299df321…e643e7`](https://sepolia.arbiscan.io/tx/0x299df3216a09efab68711c46469abb15b1b3b36fee442d8754e9ce8f97e643e7) |
 
 ## Cableado, verificado contra la cadena
 
@@ -60,8 +60,10 @@ que las constantes desplegadas son exactamente las del modelo entrenado.
 | UID de nuestro schema | `0xe1cd6720370dd3b885c72ea22f914a04f39d941bd951f151d97eb616dc17c78a` |
 | Texto del schema | `uint16 score, bool positive, uint32 juntaId, bytes32 modelHash, bytes32 featuresCommitment` |
 | Transacción de registro | [`0x565e7787…4aa4a3`](https://sepolia.arbiscan.io/tx/0x565e7787de2173af7a3e6e5f6700b6266f78522b1c12f101f6931865d54aa4a3) |
-| Primera attestation emitida | [`0x07ec5675…a20884`](https://sepolia.arbiscan.io/tx/0x07ec56754defbb3527bef68ce16e12c6bc4d800437605efda1350ce57a6cd599) |
-| Su UID | `0x8213bd646d570e4c0259e10b975208b4f7ff848260b0c4a1c0d9ed698deac1ec` |
+| Attestation **positiva** — junta #0, score 1000 | [`0x07ec5675…6cd599`](https://sepolia.arbiscan.io/tx/0x07ec56754defbb3527bef68ce16e12c6bc4d800437605efda1350ce57a6cd599) |
+| ↳ su UID | `0x8213bd646d570e4c0259e10b975208b4f7ff848260b0c4a1c0d9ed698deac1ec` |
+| Attestation **negativa** — junta #1, score 194 | [`0x2f9d81fc…e12aec`](https://sepolia.arbiscan.io/tx/0x2f9d81fc92e19b1f58c371ee1c788c6e5e694c27593f62b62efb7f4818e12aec) |
+| ↳ su UID | `0x122b79749d5f224663936b3356e147a894608a41903e9f2de28eacb2be1a763c` |
 
 Las dos direcciones están comprobadas contra el **bytecode de la cadena**, no copiadas de la
 documentación: las de EAS en otras redes no existen aquí. El detalle, con la evidencia, está en
