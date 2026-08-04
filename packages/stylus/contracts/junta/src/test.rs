@@ -41,14 +41,29 @@ fn word(v: U256) -> Vec<u8> {
     v.to_be_bytes::<32>().to_vec()
 }
 
-/// Una junta de `n` miembros cuyo reloj arranca en `INICIO`.
+/// Una junta de `n` miembros, ya arrancada, cuyo reloj empieza en `INICIO`.
+///
+/// La convoca el primer miembro y la arranca en el mismo instante, así que las pruebas que
+/// no hablan de la convocatoria ven exactamente lo que veían cuando `create_junta` arrancaba
+/// el reloj sola. El creador entra de una vez y su turno es el cero, de modo que `m[i]`
+/// sigue siendo el miembro del turno `i`.
 fn junta_de(n: u8) -> (TestVM, Junta, Vec<Address>) {
+    let (vm, mut contrato, miembros) = convocatoria_de(n);
+    contrato.arrancar(0).unwrap();
+    (vm, contrato, miembros)
+}
+
+/// Lo mismo, pero detenido en la fase anterior: la junta existe y todavía recluta.
+fn convocatoria_de(n: u8) -> (TestVM, Junta, Vec<Address>) {
     let vm = TestVM::default();
     vm.set_block_timestamp(INICIO);
     let mut contrato = Junta::from(&vm);
     contrato.constructor(TOKEN);
 
     let miembros: Vec<Address> = (1..=n).map(miembro).collect();
+    // El remitente por defecto del TestVM no es ninguno de estos, y quien convoca queda
+    // dentro de la junta: sin fijarlo, la junta tendría un miembro de más en el turno cero.
+    vm.set_sender(miembros[0]);
     contrato
         .create_junta(
             "Las Emprendedoras".into(),
@@ -316,19 +331,11 @@ fn no_se_puede_operar_sobre_una_junta_que_no_existe() {
 }
 
 #[test]
-fn una_junta_necesita_miembros_cuota_y_periodo() {
+fn una_junta_necesita_cuota_y_periodo() {
     let vm = TestVM::default();
     let mut c = Junta::from(&vm);
     c.constructor(TOKEN);
 
-    assert!(c
-        .create_junta(
-            "Sin nadie".into(),
-            alloc::vec![],
-            U256::from(CUOTA),
-            PERIODO
-        )
-        .is_err());
     assert!(c
         .create_junta(
             "Sin cuota".into(),
@@ -359,6 +366,7 @@ fn cada_junta_lleva_su_propia_cuenta() {
         PERIODO * 10,
     )
     .unwrap();
+    c.arrancar(1).unwrap();
 
     vm.set_block_timestamp(INICIO + 3 * PERIODO);
 
@@ -500,6 +508,7 @@ fn haber_reportado_en_una_junta_no_gasta_el_reporte_de_la_otra() {
         PERIODO,
     )
     .unwrap();
+    c.arrancar(1).unwrap();
 
     vm.set_sender(m[0]);
     c.report_dispute(0, m[2]).unwrap();
@@ -621,4 +630,344 @@ fn quien_no_es_miembro_se_distingue_del_que_si() {
     let (es_miembro, _, turno, _, _) = c.member_state(0, miembro(200));
     assert!(!es_miembro);
     assert_eq!(turno, u32::MAX, "no tiene turno asignado");
+}
+
+// =====================================================================================
+// La convocatoria: una junta se arma reclutando, y la lista se congela al arrancar
+//
+// `miembros.len()` es el total de ciclos de la junta, así que admitir a alguien con el
+// reloj andando cambiaría hacia atrás los defaults y la tasa de cumplimiento de todos los
+// demás. De ahí las dos fases: mientras `start_at` es cero se recluta y no pasa nada más;
+// desde que deja de serlo la lista está cerrada para siempre (ADR-0015).
+// =====================================================================================
+
+#[test]
+fn una_junta_nace_reclutando_y_sin_reloj() {
+    // Cero no es una fecha: es la única señal de que la junta todavía admite gente. Si
+    // `create_junta` volviera a arrancar el reloj sola, quien no fue listado de antemano no
+    // podría entrar nunca.
+    let (_vm, c, m) = convocatoria_de(3);
+    let (_, _, inicio, miembros, existe) = c.junta_params(0);
+
+    assert!(existe);
+    assert_eq!(inicio, 0, "está en convocatoria");
+    assert_eq!(miembros, 3);
+    assert_eq!(c.creador_de(0), m[0], "convocó el primero de la lista");
+}
+
+#[test]
+fn quien_convoca_queda_dentro_aunque_no_liste_a_nadie() {
+    // Nadie arma una junta para quedarse afuera de ella, y exigir que se liste a sí mismo
+    // sería pedirle que declare lo que ya dijo al firmar la transacción.
+    let vm = TestVM::default();
+    vm.set_block_timestamp(INICIO);
+    let mut c = Junta::from(&vm);
+    c.constructor(TOKEN);
+    vm.set_sender(miembro(1));
+
+    c.create_junta(
+        "Todavía nadie".into(),
+        alloc::vec![],
+        U256::from(CUOTA),
+        PERIODO,
+    )
+    .unwrap();
+
+    assert_eq!(c.miembros(0), alloc::vec![miembro(1)]);
+    assert_eq!(c.juntas_de(miembro(1)), alloc::vec![0]);
+    let (es_miembro, _, turno, _, _) = c.member_state(0, miembro(1));
+    assert!(es_miembro);
+    assert_eq!(turno, 0, "quien convoca cobra primero");
+}
+
+#[test]
+fn una_direccion_repetida_no_ocupa_dos_turnos() {
+    // La aplicación manda la lista con el creador adelante, así que la repetición es el
+    // caso normal y no un abuso. Lo que no puede pasar es que una persona ocupe dos turnos
+    // debiendo una sola cuota: cobraría dos pozos.
+    let vm = TestVM::default();
+    vm.set_block_timestamp(INICIO);
+    let mut c = Junta::from(&vm);
+    c.constructor(TOKEN);
+    vm.set_sender(miembro(1));
+
+    c.create_junta(
+        "Con dedazo".into(),
+        alloc::vec![miembro(1), miembro(2), miembro(2)],
+        U256::from(CUOTA),
+        PERIODO,
+    )
+    .unwrap();
+
+    assert_eq!(c.miembros(0), alloc::vec![miembro(1), miembro(2)]);
+    assert_eq!(
+        c.juntas_de(miembro(2)),
+        alloc::vec![0],
+        "tampoco aparece dos veces en su propio índice"
+    );
+}
+
+#[test]
+fn el_turno_es_el_orden_de_llegada() {
+    // El orden de cobro no necesita sorteo ni árbitro: quien llegó antes cobra antes, y eso
+    // cualquiera lo puede verificar mirando el evento de su propia entrada.
+    let (vm, mut c, m) = convocatoria_de(1);
+    let tarde = miembro(50);
+    let mas_tarde = miembro(51);
+
+    vm.set_sender(tarde);
+    assert_eq!(c.unirse(0).unwrap(), 1);
+    vm.set_sender(mas_tarde);
+    assert_eq!(c.unirse(0).unwrap(), 2);
+
+    assert_eq!(c.miembros(0), alloc::vec![m[0], tarde, mas_tarde]);
+    assert_eq!(
+        c.juntas_de(tarde),
+        alloc::vec![0],
+        "unirse también lo pone en su lista de juntas"
+    );
+    let (es_miembro, _, turno, _, _) = c.member_state(0, mas_tarde);
+    assert!(es_miembro);
+    assert_eq!(turno, 2);
+}
+
+#[test]
+fn nadie_entra_dos_veces_a_la_misma_junta() {
+    // Sin esta guarda, entrar dos veces daría dos turnos —dos pozos— por una sola cuota.
+    let (vm, mut c, m) = convocatoria_de(2);
+    vm.set_sender(m[1]);
+
+    match c.unirse(0) {
+        Err(JuntaError::YaEsMiembro(e)) => {
+            assert_eq!(e.juntaId, 0);
+            assert_eq!(e.quien, m[1]);
+        }
+        otro => panic!("ya estaba en la lista: {otro:?}"),
+    }
+    assert_eq!(c.miembros(0).len(), 2, "la lista no creció");
+}
+
+#[test]
+fn quien_convoca_no_puede_unirse_a_su_propia_junta() {
+    // El creador entra solo al convocar, así que `unirse` es su segunda entrada. Sin la
+    // guarda ocuparía dos turnos por una cuota y su junta aparecería duplicada en
+    // `juntas_de`, que es la lista con la que la aplicación arma la primera pantalla.
+    let (vm, mut c, m) = convocatoria_de(2);
+    vm.set_sender(m[0]);
+
+    match c.unirse(0) {
+        Err(JuntaError::YaEsMiembro(e)) => {
+            assert_eq!(e.juntaId, 0);
+            assert_eq!(e.quien, m[0]);
+        }
+        otro => panic!("convocar ya lo metió dentro: {otro:?}"),
+    }
+
+    assert_eq!(c.miembros(0), alloc::vec![m[0], m[1]], "la lista no cambió");
+    assert_eq!(
+        c.juntas_de(m[0]),
+        alloc::vec![0],
+        "ni el índice inverso creció"
+    );
+}
+
+#[test]
+fn no_se_arranca_una_junta_que_no_existe() {
+    // El orden de las guardas importa: el creador de una junta inexistente es la dirección
+    // cero, así que sin comprobar primero que existe, el error hablaría de permisos —
+    // `NoEsElCreador`— sobre algo que ni siquiera está ahí.
+    let (vm, mut c, _m) = convocatoria_de(2);
+    vm.set_sender(miembro(50));
+
+    match c.arrancar(7) {
+        Err(JuntaError::JuntaNoExiste(e)) => assert_eq!(e.juntaId, 7),
+        otro => panic!("no hay junta 7 que arrancar: {otro:?}"),
+    }
+}
+
+#[test]
+fn a_una_junta_en_marcha_ya_no_entra_nadie() {
+    // El corazón del diseño. `miembros.len()` es el total de ciclos: si entrara alguien con
+    // el reloj andando, el tope de `ciclos_transcurridos` subiría y con él los defaults y la
+    // tasa de cumplimiento de gente que no hizo absolutamente nada. Sería reescribir el
+    // historial ya vivido de terceros.
+    let (vm, mut c, m) = junta_de(4);
+    vm.set_block_timestamp(INICIO + 2 * PERIODO);
+
+    let (_, _, _, defaults_antes, _, _, antiguedad_antes, _) = c.history(0, m[3]);
+
+    vm.set_sender(miembro(50));
+    match c.unirse(0) {
+        Err(JuntaError::JuntaYaArrancada(e)) => assert_eq!(e.juntaId, 0),
+        otro => panic!("la lista se congela al arrancar: {otro:?}"),
+    }
+
+    let (_, _, _, defaults_despues, _, _, antiguedad_despues, _) = c.history(0, m[3]);
+    assert_eq!(defaults_antes, defaults_despues);
+    assert_eq!(antiguedad_antes, antiguedad_despues);
+    assert_eq!(c.miembros(0).len(), 4);
+}
+
+#[test]
+fn no_se_entra_a_una_junta_que_no_existe() {
+    let (vm, mut c, _m) = convocatoria_de(2);
+    vm.set_sender(miembro(50));
+    assert!(c.unirse(7).is_err());
+}
+
+#[test]
+fn solo_quien_convoco_puede_arrancar() {
+    // Arrancar congela la lista y prende el reloj de todos: es la única decisión de este
+    // contrato que no se deriva de un hecho, así que tiene dueño.
+    let (vm, mut c, m) = convocatoria_de(4);
+    vm.set_sender(m[2]);
+
+    match c.arrancar(0) {
+        Err(JuntaError::NoEsElCreador(e)) => {
+            assert_eq!(e.juntaId, 0);
+            assert_eq!(e.quien, m[2]);
+        }
+        otro => panic!("un miembro cualquiera no cierra la convocatoria: {otro:?}"),
+    }
+
+    let (_, _, inicio, _, _) = c.junta_params(0);
+    assert_eq!(inicio, 0, "sigue reclutando");
+}
+
+#[test]
+fn una_junta_de_una_sola_persona_no_arranca() {
+    // Con un solo miembro la junta tendría un ciclo y esa persona se pagaría su propio pozo.
+    // No es una junta, y el historial que produciría no significa nada.
+    let (_vm, mut c, _m) = convocatoria_de(1);
+
+    match c.arrancar(0) {
+        Err(JuntaError::FaltanMiembros(e)) => {
+            assert_eq!(e.juntaId, 0);
+            assert_eq!(e.miembros, 1);
+        }
+        otro => panic!("hacen falta dos para una junta: {otro:?}"),
+    }
+}
+
+#[test]
+fn una_junta_no_arranca_dos_veces() {
+    // Arrancar de nuevo movería `start_at` hacia adelante y borraría de un plumazo los
+    // ciclos ya vencidos: todos los defaults acumulados desaparecerían.
+    let (vm, mut c, _m) = junta_de(4);
+    vm.set_block_timestamp(INICIO + 3 * PERIODO);
+
+    match c.arrancar(0) {
+        Err(JuntaError::JuntaYaArrancada(e)) => assert_eq!(e.juntaId, 0),
+        otro => panic!("el reloj se prende una sola vez: {otro:?}"),
+    }
+
+    let (_, _, inicio, _, _) = c.junta_params(0);
+    assert_eq!(inicio, INICIO, "el arranque original quedó intacto");
+}
+
+#[test]
+fn el_reloj_empieza_al_arrancar_y_no_al_convocar() {
+    // Reclutar puede tomar días. Si el reloj contara desde la convocatoria, la junta
+    // arrancaría con ciclos ya vencidos y todos deberían cuotas de un tiempo en que ni
+    // siquiera se sabía quiénes eran.
+    let (vm, mut c, m) = convocatoria_de(4);
+    vm.set_block_timestamp(INICIO + 100 * PERIODO);
+    c.arrancar(0).unwrap();
+
+    let (_, _, inicio, _, _) = c.junta_params(0);
+    assert_eq!(inicio, INICIO + 100 * PERIODO);
+
+    let (_, _, _, defaults, _, _, antiguedad, _) = c.history(0, m[1]);
+    assert_eq!(defaults, 0, "recién arranca: nadie debe nada");
+    assert_eq!(antiguedad, 0);
+
+    vm.set_block_timestamp(INICIO + 102 * PERIODO);
+    let (_, _, _, dos_ciclos_despues, _, _, _, _) = c.history(0, m[1]);
+    assert_eq!(dos_ciclos_despues, 2, "el reloj cuenta desde el arranque");
+}
+
+#[test]
+fn en_convocatoria_nadie_nace_en_mora() {
+    // Sin la rama que lee el cero como "todavía no arranca", la resta contra el reloj de la
+    // cadena lo tomaría como enero de 1970: medio siglo de ciclos vencidos, topados al
+    // tamaño de la junta, para gente que acaba de entrar.
+    let (vm, c, m) = convocatoria_de(4);
+    vm.set_block_timestamp(INICIO + 10_000 * PERIODO);
+
+    let (tasa, _, _, defaults, _, _, antiguedad, _) = c.history(0, m[0]);
+    assert_eq!(defaults, 0, "no ha vencido una sola cuota");
+    assert_eq!(antiguedad, 0);
+    assert_eq!(tasa, I128::try_from(SCALE).unwrap());
+
+    let (ciclo, pagadas, total) = c.cycle_coverage(0);
+    assert_eq!((ciclo, pagadas, total), (0, 0, 4));
+    let (_, _, _, _, debe) = c.member_state(0, m[0]);
+    assert_eq!(debe, 0);
+}
+
+#[test]
+fn antes_de_arrancar_no_se_mueve_dinero_ni_se_juzga_a_nadie() {
+    // Las tres puertas por las que entra el mundo real. Mientras la junta recluta no hay
+    // plazos que cumplir, ni rueda que repartir, ni convivencia de la que puedan salir
+    // disputas: lo único que se puede hacer es entrar.
+    let (vm, mut c, m) = convocatoria_de(3);
+    vm.set_sender(m[0]);
+
+    match c.deposit(0) {
+        Err(JuntaError::JuntaNoArrancada(e)) => assert_eq!(e.juntaId, 0),
+        otro => panic!("no hay cuota que pagar todavía: {otro:?}"),
+    }
+    match c.distribute(0) {
+        Err(JuntaError::JuntaNoArrancada(e)) => assert_eq!(e.juntaId, 0),
+        otro => panic!("no hay turno que cobrar todavía: {otro:?}"),
+    }
+    match c.report_dispute(0, m[1]) {
+        Err(JuntaError::JuntaNoArrancada(e)) => assert_eq!(e.juntaId, 0),
+        otro => panic!("no ha pasado nada entre ellos todavía: {otro:?}"),
+    }
+
+    let (pozo, _, _, _, aportado, distribuido) = c.junta_state(0);
+    assert_eq!(
+        (pozo, aportado, distribuido),
+        (U256::ZERO, U256::ZERO, U256::ZERO)
+    );
+    let (_, _, _, _, _, _, _, disputas) = c.history(0, m[1]);
+    assert_eq!(disputas, 0, "no se escribió nada");
+}
+
+#[test]
+fn el_camino_completo_de_una_junta_reclutada() {
+    // Convocar con una sola persona, que lleguen dos, arrancar y pagar. Es el recorrido que
+    // hace una junta de verdad, y lo que se comprueba en cada paso es que la fase anterior
+    // dejó al contrato en el estado que la siguiente necesita.
+    let (vm, mut c, m) = convocatoria_de(1);
+    let segunda = miembro(50);
+    let tercera = miembro(51);
+
+    vm.set_sender(segunda);
+    c.unirse(0).unwrap();
+    vm.set_sender(tercera);
+    c.unirse(0).unwrap();
+
+    // Depositar antes de arrancar no llega ni a mirar quién es el llamante.
+    assert!(matches!(c.deposit(0), Err(JuntaError::JuntaNoArrancada(_))));
+
+    vm.set_sender(m[0]);
+    c.arrancar(0).unwrap();
+
+    let (_, periodo, inicio, miembros, existe) = c.junta_params(0);
+    assert!(existe);
+    assert_eq!(miembros, 3, "el total de ciclos quedó congelado en tres");
+    assert_eq!(inicio, INICIO);
+    assert_eq!(periodo, PERIODO);
+
+    // Y aquí el depósito ya cruza la guarda de fase y llega hasta el token. Ese último
+    // tramo no se puede simular —una llamada mutante a otro contrato esquiva al TestVM, ver
+    // la nota de arriba—, así que el error que vuelve es el de la transferencia y no el de
+    // la junta: la prueba de que el dinero se mueve vive en la cadena local.
+    vm.set_sender(tercera);
+    assert!(
+        matches!(c.deposit(0), Err(JuntaError::TransferenciaFallida(_))),
+        "arrancada, la cuota llega hasta el token"
+    );
 }

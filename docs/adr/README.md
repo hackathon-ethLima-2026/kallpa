@@ -1,6 +1,6 @@
 # Decisiones de arquitectura (ADR)
 
-Catorce decisiones salidas de la revisión del build spec. Cada una registra **por qué** se decidió algo; el **qué** vive en el §6 del build spec. Si el §6 y un ADR se contradicen, gana el §6 — pero el ADR explica qué se rompe al cambiarlo.
+Quince decisiones salidas de la revisión del build spec. Cada una registra **por qué** se decidió algo; el **qué** vive en el §6 del build spec. Si el §6 y un ADR se contradicen, gana el §6 — pero el ADR explica qué se rompe al cambiarlo.
 
 | #                                                                   | Decisión                                 | En una línea                                                                                                               |
 | ------------------------------------------------------------------- | ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
@@ -18,5 +18,6 @@ Catorce decisiones salidas de la revisión del build spec. Cada una registra **p
 | [0012](./0012-escala-de-scorecard-en-log-odds.md)                   | Escala de scorecard                      | El score es lineal en log-odds: la escala vieja metía al 85% en un solo tramo.                                            |
 | [0013](./0013-autorizacion-de-disputas.md)                          | Autorización de disputas                 | Reporta solo quien comparte la junta, nadie se reporta a sí mismo, y cada reportante cuenta una vez.                       |
 | [0014](./0014-credito-por-el-peor-historial.md)                     | Crédito por el peor historial            | El préstamo se decide con el mínimo de todas tus juntas; el solicitante ya no elige cuál se mira.                          |
+| [0015](./0015-junta-en-dos-fases.md)                                | Junta en dos fases                       | Nace en convocatoria (`start_at == 0`) y congela su lista al arrancar; `miembros.len()` es el total de ciclos.             |
 
 El vocabulario del dominio está en [`CONTEXT.md`](../../CONTEXT.md) en la raíz.

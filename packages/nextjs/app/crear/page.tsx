@@ -3,26 +3,28 @@
 /**
  * Crear una junta: la pantalla que convierte a Kallpa en producto.
  *
- * Todo lo que se decide aquí queda fijo para siempre. El contrato no tiene forma de agregar
- * un miembro después, y eso no es una limitación pendiente de resolver: una junta se
- * compromete a tantos ciclos como personas tiene, y cada una cobra su turno exactamente una
- * vez. Cambiar el grupo a mitad de camino cambiaría a quién le debe la junta.
+ * Crear ya no es cerrar. La junta nace en convocatoria —con quien la crea dentro y a quien
+ * quiera sumar de entrada— y sigue abierta hasta que su creador la arranque. Lo que se
+ * congela al arrancar es el grupo, y eso sí es para siempre: una junta se compromete a tantos
+ * ciclos como personas tiene, y cada una cobra su turno exactamente una vez.
  *
- * De ahí la forma de esta pantalla: valida todo antes de firmar y muestra un resumen con las
- * cifras exactas que se van a escribir. La transacción es la última puerta, no la primera.
+ * De ahí la forma de esta pantalla: la lista de direcciones es una comodidad, no un requisito
+ * —quien no las tenga a mano crea la junta y comparte el enlace—, pero el nombre, la cuota y
+ * el período sí quedan escritos ahora. Por eso valida antes de firmar y muestra un resumen
+ * con las cifras exactas. La transacción es la última puerta, no la primera.
  */
 
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { isAddress, parseUnits } from "viem";
+import { type TransactionReceipt, decodeEventLog, isAddress, parseAbiItem, parseUnits } from "viem";
 import { useAccount } from "wagmi";
 import { Dato } from "~~/components/kallpa/Dato";
 import { RuedaDeJunta } from "~~/components/kallpa/Isotipo";
 import { Cargando, Marco, PideBilletera, Titulo, Vacio } from "~~/components/kallpa/Marco";
-import { mUSDC } from "~~/components/kallpa/cifras";
+import { enPalabras, mUSDC } from "~~/components/kallpa/cifras";
 import { Address } from "~~/components/scaffold-eth";
-import { useScaffoldReadContract, useScaffoldWriteContract } from "~~/hooks/scaffold-eth";
+import { useDeployedContractInfo, useScaffoldWriteContract } from "~~/hooks/scaffold-eth";
 
 /** El contrato guarda el período en segundos; la gente piensa en semanas. */
 const CICLOS = [
@@ -45,29 +47,48 @@ const aCuotaBase = (texto: string): bigint | null => {
   return parseUnits(limpio, 6);
 };
 
-/** Duración en palabras, eligiendo la unidad más grande que dé exacta. */
-const enPalabras = (segundos: number) => {
-  const unidades: [number, string, string][] = [
-    [2_592_000, "mes", "meses"],
-    [604_800, "semana", "semanas"],
-    [86_400, "día", "días"],
-    [3_600, "hora", "horas"],
-    [60, "minuto", "minutos"],
-  ];
-  for (const [tamano, singular, plural] of unidades) {
-    if (segundos >= tamano && segundos % tamano === 0) {
-      const cuantos = segundos / tamano;
-      return `${cuantos} ${cuantos === 1 ? singular : plural}`;
+/**
+ * El evento con el que la junta anuncia su propio número.
+ *
+ * Se declara aquí y no sale de `deployedContracts.ts` porque ese archivo lo escribe el
+ * exportador de ABI de Stylus, que solo emite funciones y errores: ningún evento del contrato
+ * aparece ahí. La firma es la del `sol!` de `packages/stylus/contracts/junta/src/lib.rs`.
+ */
+const JUNTA_CREADA = parseAbiItem(
+  "event JuntaCreated(uint32 indexed juntaId, uint256 cuota, uint64 periodo, uint32 miembros)",
+);
+
+/**
+ * El número de la junta que creó una transacción.
+ *
+ * Antes esto se resolvía leyendo `totalJuntas() - 1` después de firmar, y era una carrera de
+ * verdad: si otra persona creaba la suya en el mismo bloque, el contador ya había avanzado y
+ * mandábamos al creador a la junta de un desconocido. El recibo no tiene ese problema porque
+ * solo contiene los registros de TU transacción.
+ *
+ * Se filtra por la dirección del contrato porque un recibo puede traer registros de varios
+ * contratos, y basta que otro emita un evento con la misma firma para colar un número ajeno.
+ * Devuelve `undefined` sin quejarse si no lo encuentra: la junta se creó igual, y quien llama
+ * ya tiene una salida honesta para ese caso.
+ */
+const idDeLaJuntaCreada = (recibo: TransactionReceipt, contrato: string | undefined) => {
+  for (const registro of recibo.logs) {
+    if (contrato && registro.address.toLowerCase() !== contrato.toLowerCase()) continue;
+    try {
+      const evento = decodeEventLog({ abi: [JUNTA_CREADA], data: registro.data, topics: registro.topics });
+      return Number(evento.args.juntaId);
+    } catch {
+      // Otro evento de la misma transacción. Que no decodifique es lo normal, no un fallo.
     }
   }
-  return `${segundos} segundos`;
+  return undefined;
 };
 
 const CAMPO =
   "w-full rounded-[4px] border border-[--color-linea] bg-[--color-noche] px-4 py-3 text-[--color-marfil] " +
   "placeholder:text-[--color-gris] outline-none transition-colors focus:border-[--color-oro]";
 
-type Fase = "editando" | "creando" | "ubicando" | "sinNumero";
+type Fase = "editando" | "creando" | "sinNumero";
 
 export default function CrearJunta() {
   const { address } = useAccount();
@@ -80,10 +101,8 @@ export default function CrearJunta() {
   const [mostrarProblemas, setMostrarProblemas] = useState(false);
   const [fase, setFase] = useState<Fase>("editando");
 
-  const { data: totalJuntas, refetch: releerTotal } = useScaffoldReadContract({
-    contractName: "junta",
-    functionName: "totalJuntas",
-  });
+  // La dirección se pide solo para reconocer los registros de la junta dentro del recibo.
+  const { data: contratoJunta } = useDeployedContractInfo({ contractName: "junta" });
 
   const { writeContractAsync: escribirJunta } = useScaffoldWriteContract({ contractName: "junta" });
 
@@ -113,40 +132,50 @@ export default function CrearJunta() {
   if (!nombre.trim()) problemas.push("Ponle un nombre a la junta, para que sus miembros la reconozcan.");
   if (cuotaBase === null) problemas.push("Escribe en números cuánto pone cada persona por ciclo. Por ejemplo: 50");
   else if (cuotaBase === 0n) problemas.push("La cuota no puede ser cero: la junta no juntaría nada.");
-  if (miembros < 2) problemas.push("Una junta de una sola persona no es una junta. Agrega al menos a alguien más.");
+  // Ya no se exige un segundo miembro. Una junta recién creada queda en convocatoria, así que
+  // empezar solo y repartir el enlace es un camino legítimo: el grupo se completa antes de
+  // arrancar, y arrancar es lo que de verdad exige que sean por lo menos dos.
   if (filas.some((_, i) => errorDeFila(i) !== null))
     problemas.push("Hay direcciones con problemas: revisa las marcadas en rojo.");
 
   const cambiarFila = (i: number, valor: string) => setOtros(previas => previas.map((v, j) => (j === i ? valor : v)));
   const quitarFila = (i: number) => setOtros(previas => previas.filter((_, j) => j !== i));
 
+  /**
+   * Firmar la junta y llevar a quien la creó a la suya.
+   *
+   * De una transacción minada solo se observan eventos y estado: el `uint32` que devuelve
+   * `createJunta` no le llega a quien la envía. El número sale entonces del evento que la
+   * junta emite en el recibo de esta misma transacción.
+   *
+   * El número se guarda en una variable local y no en el estado: `onBlockConfirmation` corre
+   * ANTES de que esta espera termine, así que un `setState` no estaría disponible todavía en
+   * la línea siguiente.
+   */
   const crear = async () => {
     setMostrarProblemas(true);
     if (problemas.length > 0 || cuotaBase === null || !address) return;
 
-    // Se anota el total de antes para reconocer la junta nueva cuando aparezca.
-    const antes = Number(totalJuntas ?? 0);
     const lista = [address, ...validas];
+    let nueva: number | undefined;
 
     try {
       setFase("creando");
-      await escribirJunta({
-        functionName: "createJunta",
-        args: [nombre.trim(), lista, cuotaBase, BigInt(periodo)],
-      });
+      await escribirJunta(
+        {
+          functionName: "createJunta",
+          args: [nombre.trim(), lista, cuotaBase, BigInt(periodo)],
+        },
+        {
+          onBlockConfirmation: (recibo: TransactionReceipt) => {
+            nueva = idDeLaJuntaCreada(recibo, contratoJunta?.address);
+          },
+        },
+      );
 
-      // De una transacción minada solo se observan eventos y estado: el número que devuelve
-      // createJunta no le llega a quien la envía. Por eso se vuelve a leer el total y se
-      // resta uno. Se reintenta porque el nodo puede tardar un instante en servir el bloque.
-      setFase("ubicando");
-      for (let intento = 0; intento < 8; intento++) {
-        const { data } = await releerTotal();
-        const ahora = Number(data ?? 0);
-        if (ahora > antes) {
-          router.push(`/junta/${ahora - 1}`);
-          return;
-        }
-        await new Promise(listo => setTimeout(listo, 700));
+      if (nueva !== undefined) {
+        router.push(`/junta/${nueva}`);
+        return;
       }
       setFase("sinNumero");
     } catch {
@@ -163,9 +192,8 @@ export default function CrearJunta() {
         titulo="Arma tu junta"
         bajada={
           <>
-            Un grupo cerrado que se compromete a{" "}
-            <span className="text-[--color-oro]">tantos ciclos como personas tiene</span>. Todo lo que decidas aquí
-            queda escrito en la cadena.
+            Un grupo que se compromete a <span className="text-[--color-oro]">tantos ciclos como personas tiene</span>.
+            La creas ahora y se queda abierta hasta que tú la arranques.
           </>
         }
       />
@@ -175,7 +203,7 @@ export default function CrearJunta() {
       ) : fase === "sinNumero" ? (
         <Vacio
           titulo="Tu junta se creó"
-          detalle="La transacción salió bien, pero no pudimos leer el número de la junta nueva. Aparece en tu lista de juntas apenas la cadena termine de responder."
+          detalle="La transacción salió bien, pero su comprobante no traía el número de la junta nueva, así que no podemos llevarte directo. Aparece en tu lista de juntas apenas la cadena termine de responder."
           accion={
             <Link href="/" className="k-boton no-underline">
               Ver mis juntas
@@ -251,6 +279,11 @@ export default function CrearJunta() {
             {/* ── Quiénes son ──────────────────────────────────────────────────────── */}
             <div className="k-tarjeta p-8">
               <p className="k-rotulo mb-4">Miembros</p>
+              <p className="mb-5 max-w-xl text-sm leading-relaxed text-[--color-gris]">
+                Si ya tienes las direcciones de tu grupo, ponlas aquí y entran contigo. Si no las tienes a mano, no pasa
+                nada: crea la junta igual y pásales el enlace para que entren solos. Se puede sumar gente hasta que la
+                arranques.
+              </p>
 
               {/* Quien crea la junta participa en ella, así que ocupa el primer turno y no se
                   puede quitar: una junta sin organizadora adentro no es una junta. */}
@@ -301,10 +334,10 @@ export default function CrearJunta() {
               </button>
 
               <p className="mt-6 max-w-xl border-t border-[--color-linea] pt-5 text-sm leading-relaxed text-[--color-gris]">
-                El orden de esta lista es el orden de los turnos. Y los miembros se definen ahora porque después no se
-                pueden agregar: la junta se compromete a tantos ciclos como personas tiene y cada una cobra una sola
-                vez. Cambiar el grupo a mitad de camino cambiaría a quién le debe la junta. Igual que en una junta de
-                verdad.
+                El orden de esta lista es el orden de los turnos, y quien entre después con el enlace se pone al final
+                de la fila. La lista se cierra el día que arranques la junta y ya no se abre: la junta se compromete a
+                tantos ciclos como personas tiene y cada una cobra una sola vez, así que sumar a alguien más tarde
+                cambiaría a quién le debe la junta. Igual que en una junta de verdad.
               </p>
             </div>
           </div>
@@ -319,7 +352,7 @@ export default function CrearJunta() {
             </div>
 
             <div className="k-tarjeta flex flex-col gap-5 p-6">
-              <p className="k-rotulo">Así quedaría</p>
+              <p className="k-rotulo">Así arrancaría hoy</p>
               {/* Las cifras van en monoespaciada porque son exactamente las que se van a
                   escribir en la cadena si firmas: el resumen no redondea nada. */}
               <Dato termino="Miembros" valor={String(miembros)} />
@@ -330,6 +363,13 @@ export default function CrearJunta() {
                 destacado
               />
               <Dato termino="Dura en total" valor={enPalabras(miembros * periodo)} />
+              {/* El único número de este panel que todavía puede moverse es el de miembros, y
+                  mueve a los otros tres con él. Decirlo evita que quien comparta el enlace
+                  crea que rompió algo cuando el pozo le cambie. */}
+              <p className="text-sm leading-relaxed text-[--color-gris]">
+                Cuentan a quienes ya están. Si alguien más entra con el enlace antes de que la arranques, la junta
+                crece: un ciclo más y un pozo más grande.
+              </p>
             </div>
 
             {/* Una junta de dos personas es una junta válida, pero nunca va a servir para
@@ -337,13 +377,13 @@ export default function CrearJunta() {
                 ciclos después. Una junta dura tantos ciclos como miembros tenga: con menos
                 de tres nunca alcanza el mínimo de historial que el fondo exige. No bloquea
                 nada —ahorrar entre dos es legítimo—, solo lo dice. */}
-            {miembros >= 2 && miembros < 3 && (
+            {miembros < 3 && (
               <div className="k-tarjeta p-6">
-                <p className="k-rotulo mb-3">Esta junta no dará crédito</p>
+                <p className="k-rotulo mb-3">Así no daría crédito</p>
                 <p className="text-sm leading-relaxed text-[--color-gris]">
                   Una junta dura tantos ciclos como miembros tiene, y el fondo exige tres ciclos de historial antes de
-                  prestarle a nadie. Con {miembros} nunca se llega. Sirve para ahorrar en grupo, no para construir
-                  reputación: para eso, súmale a alguien más.
+                  prestarle a nadie. Con {miembros} nunca se llega. Todavía puedes sumar a alguien aquí, o crearla y
+                  esperar a que entren con el enlace antes de arrancarla.
                 </p>
               </div>
             )}
@@ -366,15 +406,12 @@ export default function CrearJunta() {
                   Crear la junta
                 </button>
                 <p className="text-sm leading-relaxed text-[--color-gris]">
-                  Crear la junta es una sola firma y no mueve dinero. Cobrar las cuotas viene después: la primera vez
-                  que cada miembro pague, su billetera pedirá dos confirmaciones, una para autorizar al contrato y otra
-                  para pagar.
+                  Crear la junta es una sola firma y no mueve dinero. Después te llevamos a su pantalla, donde tienes el
+                  enlace para invitar y el botón para arrancarla cuando estén todas. Recién ahí empiezan las cuotas.
                 </p>
               </>
             ) : (
-              <Cargando
-                que={fase === "creando" ? "Escribiendo tu junta en la cadena" : "Buscando el número de tu junta"}
-              />
+              <Cargando que="Escribiendo tu junta en la cadena" />
             )}
           </aside>
         </div>

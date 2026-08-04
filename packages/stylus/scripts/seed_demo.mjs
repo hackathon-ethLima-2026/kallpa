@@ -31,9 +31,11 @@ import { fileURLToPath } from "node:url";
 import {
   createPublicClient,
   createWalletClient,
+  decodeEventLog,
   formatEther,
   http,
   keccak256,
+  parseAbiItem,
   toHex,
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
@@ -101,6 +103,7 @@ const ABI = {
     [{ type: "uint32" }],
   ),
   totalJuntas: fn("totalJuntas", [], [{ type: "uint32" }], "view"),
+  arrancar: fn("arrancar", [{ name: "juntaId", type: "uint32" }], []),
   deposit: fn("deposit", [{ name: "juntaId", type: "uint32" }], []),
   distribute: fn(
     "distribute",
@@ -226,6 +229,48 @@ async function enviar(cuenta, address, abi, functionName, args = [], value) {
 
 const esperar = (ms) => new Promise((r) => setTimeout(r, ms));
 
+/** El evento con el que una junta recién creada anuncia su propio número. */
+const JUNTA_CREADA = parseAbiItem(
+  "event JuntaCreated(uint32 indexed juntaId, uint256 cuota, uint64 periodo, uint32 miembros)",
+);
+
+/**
+ * Crea una junta y devuelve su número, leído del evento de su propia transacción.
+ *
+ * No se deduce de `totalJuntas() - 1`. Ese contador es global y lo mueve cualquiera, así que
+ * entre la transacción y la lectura otra junta puede colarse y este guion terminaría sembrando
+ * sobre una junta ajena —repartiendo cuotas y cobrando turnos en el grupo de otra persona—.
+ * El recibo no tiene ese problema: solo contiene los registros de esta llamada.
+ *
+ * Los registros se filtran por la dirección del contrato porque un recibo puede traer eventos
+ * de varios, y basta que otro emita uno con la misma firma para colar un número equivocado.
+ */
+async function crearJunta(cuenta, nombre, direcciones) {
+  const hash = await billetera(cuenta).writeContract({
+    address: JUNTA,
+    abi: ABI.createJunta,
+    functionName: "createJunta",
+    args: [nombre, direcciones, CUOTA, PERIODO],
+  });
+  const recibo = await publico.waitForTransactionReceipt({ hash });
+  for (const registro of recibo.logs) {
+    if (registro.address.toLowerCase() !== JUNTA.toLowerCase()) continue;
+    try {
+      const evento = decodeEventLog({
+        abi: [JUNTA_CREADA],
+        data: registro.data,
+        topics: registro.topics,
+      });
+      return Number(evento.args.juntaId);
+    } catch {
+      // Otro evento de la misma transacción. Que no decodifique es lo normal.
+    }
+  }
+  throw new Error(
+    `La junta "${nombre}" se creó pero su transacción no trae el evento JuntaCreated`,
+  );
+}
+
 async function main() {
   const tesorero = privateKeyToAccount(leerClave());
   const miembros = Array.from({ length: MIEMBROS }, (_, i) =>
@@ -270,33 +315,43 @@ async function main() {
   // ── Las dos juntas ────────────────────────────────────────────────────────────────────
   const direcciones = miembros.map((m) => m.address);
 
-  console.log("\n3. Creando las dos juntas...");
-  await enviar(tesorero, JUNTA, ABI.createJunta, "createJunta", [
-    "Las Emprendedoras",
-    direcciones,
-    CUOTA,
-    PERIODO,
-  ]);
-  const total = Number(
-    await publico.readContract({
-      address: JUNTA,
-      abi: ABI.totalJuntas,
-      functionName: "totalJuntas",
-    }),
-  );
-  const BUENA = total - 1;
+  // Convoca María y no el tesorero. `createJunta` mete a quien convoca dentro de la junta,
+  // y el total de ciclos es el número de miembros: si convocara el tesorero —que no tiene
+  // mUSDC ni autorizó nada— las juntas serían de nueve y cada miembro quedaría una cuota
+  // corto, con lo que el caso ejemplar dejaría de dar el score máximo. Convocando desde
+  // dentro, su dirección se ignora por repetida y quedan los ocho de siempre, con María en
+  // el turno 0: el mismo que después cobra el pozo de "Los del Mercado".
+  const convocante = miembros[0];
 
-  await enviar(tesorero, JUNTA, ABI.createJunta, "createJunta", [
-    "Los del Mercado",
-    direcciones,
-    CUOTA,
-    PERIODO,
-  ]);
-  const MALA = BUENA + 1;
-  const arranque = Date.now();
+  console.log(`\n3. Creando las dos juntas (convoca ${NOMBRES[0]})...`);
+  const BUENA = await crearJunta(convocante, "Las Emprendedoras", direcciones);
+  const MALA = await crearJunta(convocante, "Los del Mercado", direcciones);
   console.log(
     `   junta #${BUENA} "Las Emprendedoras"  ·  junta #${MALA} "Los del Mercado"`,
   );
+
+  // ── Arrancar el reloj ─────────────────────────────────────────────────────────────────
+  // `createJunta` deja la junta en convocatoria con `start_at` en 0, y el contrato rechaza
+  // cualquier depósito hasta que su creador la arranca. La fase existe porque los defaults
+  // se derivan del reloj y no se escriben (ADR-0005): si el reloj partiera en el momento de
+  // crear, los ciclos empezarían a vencer mientras la junta todavía se está armando —
+  // repartiendo gas, mUSDC y autorizaciones— y el historial arrancaría con incumplimientos
+  // que nadie cometió. Aquí eso serían minutos sobre ciclos de un minuto; en una junta real,
+  // las semanas que tarda en reunirse el grupo.
+  //
+  // Van una tras otra y no en paralelo: las dos las firma quien convocó, que es el único
+  // autorizado a arrancarlas, y dos transacciones simultáneas de la misma cuenta chocan de
+  // nonce.
+  console.log("\n   arrancando las dos juntas (solo quien convocó puede)...");
+  await enviar(convocante, JUNTA, ABI.arrancar, "arrancar", [BUENA]);
+  await enviar(convocante, JUNTA, ABI.arrancar, "arrancar", [MALA]);
+
+  // El reloj local se toma después de arrancar las dos, no al crearlas: es la referencia
+  // contra la que se calculan las esperas de más abajo, y tomarla al final deja a las dos
+  // juntas con `start_at` anterior a este instante. Así una espera de N segundos desde aquí
+  // garantiza al menos N segundos vencidos en ambas.
+  const arranque = Date.now();
+  console.log("   las dos en marcha");
 
   // ── La junta ejemplar ─────────────────────────────────────────────────────────────────
   // Cada miembro paga sus ocho cuotas de una vez. Pagar antes del vencimiento cuenta como

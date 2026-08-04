@@ -9,19 +9,19 @@ Entregable oficial del hackathon.
 
 | Contrato | Dirección | Arbiscan |
 |---|---|---|
-| `mock_usdc` | `0x2412724a112cdde1319d54e378e660a68f490211` | [ver](https://sepolia.arbiscan.io/address/0x2412724a112cdde1319d54e378e660a68f490211) |
-| `junta` | `0x16b5005e204f7e9143e5138462fa82e64acb4c3a` | [ver](https://sepolia.arbiscan.io/address/0x16b5005e204f7e9143e5138462fa82e64acb4c3a) |
-| `score_engine` | `0x24ba77e0d24a93e049acd63cad74312476ac1413` | [ver](https://sepolia.arbiscan.io/address/0x24ba77e0d24a93e049acd63cad74312476ac1413) |
-| `pool` | `0xfe2af4e49d4e99088e4225e42e288dac7f2cf963` | [ver](https://sepolia.arbiscan.io/address/0xfe2af4e49d4e99088e4225e42e288dac7f2cf963) |
+| `mock_usdc` | `0x9f49b8ace3c9e308f87074caf9f17080f9f021c9` | [ver](https://sepolia.arbiscan.io/address/0x9f49b8ace3c9e308f87074caf9f17080f9f021c9) |
+| `junta` | `0xd883f27cab713eeb3a9f4f133c134d9815145ae7` | [ver](https://sepolia.arbiscan.io/address/0xd883f27cab713eeb3a9f4f133c134d9815145ae7) |
+| `score_engine` | `0x75df0bf616848eb83138ddfbc3220551043868f6` | [ver](https://sepolia.arbiscan.io/address/0x75df0bf616848eb83138ddfbc3220551043868f6) |
+| `pool` | `0x33424ea2762bc18a5435036f365e02f7567ccf27` | [ver](https://sepolia.arbiscan.io/address/0x33424ea2762bc18a5435036f365e02f7567ccf27) |
 
 ### Transacciones de despliegue
 
 | Contrato | Transacción |
 |---|---|
-| `mock_usdc` | [`0xaf4f4238…eed14`](https://sepolia.arbiscan.io/tx/0x0db221effea73f02f03116a236b605e7aaacef01fad666146e50a72fb334779c) |
-| `junta` | [`0xc9c613e5…d5fcdc`](https://sepolia.arbiscan.io/tx/0xc9c613e5739c58e55f9870dc65a6af21f75213cebb7f42cbce864a51442a7158) |
-| `score_engine` | [`0x60470e93…df85fd`](https://sepolia.arbiscan.io/tx/0x60470e931023d5ab3fdcd80c39269fabe6f3bc09aa459fcefeb330caaa04aacb) |
-| `pool` | [`0xc565a619…3461bc`](https://sepolia.arbiscan.io/tx/0xc565a61956669160c1b7d99a1119ba2f8d7aea34cea5a73bd7c3a8774150ba90) |
+| `mock_usdc` | [`0xaf4f4238…eed14`](https://sepolia.arbiscan.io/tx/0x913b11ec1ff5d7ad54d53e1925d2afabdbdb3770b901fce99dc499914e2b06a8) |
+| `junta` | [`0x071985fd…d5fcdc`](https://sepolia.arbiscan.io/tx/0x071985fdb4e294bb34343b1f994bff003b6299cf05d36af28e84613c4c4ae334) |
+| `score_engine` | [`0x8c094ce1…df85fd`](https://sepolia.arbiscan.io/tx/0x8c094ce19af669980b3dc544c5e80a5b1fed3e394579a6bcfea00061b1ded676) |
+| `pool` | [`0x299df321…3461bc`](https://sepolia.arbiscan.io/tx/0x299df3216a09efab68711c46469abb15b1b3b36fee442d8754e9ce8f97e643e7) |
 
 ## Cableado, verificado contra la cadena
 
@@ -46,7 +46,7 @@ ciclos**.
 | AUC en el conjunto de prueba | 0.927 |
 | Semilla del dataset | 20260802 |
 | Equivalencia contrato ↔ Python | exacta, 0 puntos de diferencia sobre 20 vectores |
-| Gas de `record_score` | **163 695** — medido, no estimado |
+| Gas de `record_score` | **165 296** — medido, no estimado |
 
 El `modelHash` de la cadena coincide con el que produce `packages/ai-model/quantize.py`, así
 que las constantes desplegadas son exactamente las del modelo entrenado.
@@ -60,8 +60,8 @@ que las constantes desplegadas son exactamente las del modelo entrenado.
 | UID de nuestro schema | `0xe1cd6720370dd3b885c72ea22f914a04f39d941bd951f151d97eb616dc17c78a` |
 | Texto del schema | `uint16 score, bool positive, uint32 juntaId, bytes32 modelHash, bytes32 featuresCommitment` |
 | Transacción de registro | [`0x565e7787…4aa4a3`](https://sepolia.arbiscan.io/tx/0x565e7787de2173af7a3e6e5f6700b6266f78522b1c12f101f6931865d54aa4a3) |
-| Primera attestation emitida | [`0xbd4fd6a6…a20884`](https://sepolia.arbiscan.io/tx/0xbd4fd6a635237130c26c4dfc6ef593d946dc5d454781ecbe5f885e779aa20884) |
-| Su UID | `0xfbe535bed277cc4a213f54cd9db1e0a5e0f05aa7ddf6c5011a6de0fd688f1324` |
+| Primera attestation emitida | [`0x07ec5675…a20884`](https://sepolia.arbiscan.io/tx/0x07ec56754defbb3527bef68ce16e12c6bc4d800437605efda1350ce57a6cd599) |
+| Su UID | `0x8213bd646d570e4c0259e10b975208b4f7ff848260b0c4a1c0d9ed698deac1ec` |
 
 Las dos direcciones están comprobadas contra el **bytecode de la cadena**, no copiadas de la
 documentación: las de EAS en otras redes no existen aquí. El detalle, con la evidencia, está en
@@ -114,7 +114,7 @@ el resto lo hizo el reloj de la cadena.
 | **Score en cadena · junta #0** | [`0x6b41edff…d12d6b`](https://sepolia.arbiscan.io/tx/0x6b41edff9dc3d8b79e84503674c4b7f7897208190b0c118314a773cb4cd12d6b) |
 | **Score en cadena · junta #1** | [`0x89389262…3568ff`](https://sepolia.arbiscan.io/tx/0x893892625ee1d490c1710948bab9bc15e791537655f568dc6eb328bdad3568ff) |
 
-**Gas de `record_score` con historial completo: 163 695.** Cubre leer el historial de otro
+**Gas de `record_score` con historial completo: 165 296.** Cubre leer el historial de otro
 contrato, correr el modelo en aritmética de punto fijo, escribir el resultado y emitir el
 evento. Es un número medido, no estimado.
 

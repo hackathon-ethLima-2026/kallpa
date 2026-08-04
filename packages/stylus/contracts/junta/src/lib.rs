@@ -20,6 +20,11 @@
 //! 3. **Todo lo que se lee es O(1)** (ADR-0003). El Pool recomputa el score dentro de la
 //!    misma transacción en que decide un préstamo, así que `history` no puede recorrer un
 //!    registro de pagos: mantiene agregados y deriva el resto con aritmética.
+//!
+//! 4. **La lista de miembros se congela al arrancar** (ADR-0015). Una junta se arma
+//!    reclutando, así que nace en convocatoria y admite a quien llegue; pero desde que su
+//!    reloj empieza a correr nadie más entra, porque `miembros.len()` **es** el total de
+//!    ciclos: sumar a alguien después reescribiría el historial ya vivido de todos los demás.
 
 #![cfg_attr(not(any(test, feature = "export-abi")), no_main)]
 #![cfg_attr(not(any(test, feature = "export-abi")), no_std)]
@@ -84,12 +89,24 @@ sol! {
 
 sol! {
     event JuntaCreated(uint32 indexed juntaId, uint256 cuota, uint64 periodo, uint32 miembros);
+    event MemberJoined(uint32 indexed juntaId, address indexed member, uint32 turno);
+    event JuntaStarted(uint32 indexed juntaId, uint64 inicio, uint32 miembros);
     event Deposited(uint32 indexed juntaId, address indexed member, uint32 ciclo, bool puntual);
     event Distributed(uint32 indexed juntaId, address indexed member, uint32 turno, uint256 monto);
     event DisputeReported(uint32 indexed juntaId, address indexed member, uint32 total);
 
     #[derive(Debug)]
     error JuntaNoExiste(uint32 juntaId);
+    #[derive(Debug)]
+    error YaEsMiembro(uint32 juntaId, address quien);
+    #[derive(Debug)]
+    error NoEsElCreador(uint32 juntaId, address quien);
+    #[derive(Debug)]
+    error JuntaYaArrancada(uint32 juntaId);
+    #[derive(Debug)]
+    error JuntaNoArrancada(uint32 juntaId);
+    #[derive(Debug)]
+    error FaltanMiembros(uint32 juntaId, uint32 miembros);
     #[derive(Debug)]
     error NoEsMiembro(uint32 juntaId, address quien);
     #[derive(Debug)]
@@ -111,6 +128,11 @@ sol! {
 #[derive(SolidityError, Debug)]
 pub enum JuntaError {
     JuntaNoExiste(JuntaNoExiste),
+    YaEsMiembro(YaEsMiembro),
+    NoEsElCreador(NoEsElCreador),
+    JuntaYaArrancada(JuntaYaArrancada),
+    JuntaNoArrancada(JuntaNoArrancada),
+    FaltanMiembros(FaltanMiembros),
     NoEsMiembro(NoEsMiembro),
     JuntaCompleta(JuntaCompleta),
     CuotasAlDia(CuotasAlDia),
@@ -143,7 +165,15 @@ sol_storage! {
         string nombre;
         uint256 cuota;
         uint64 periodo;
+        // Cero significa "en convocatoria", no el año 1970: la junta existe y recluta, pero
+        // su reloj todavía no corre. Es la única bandera de fase que hay, y es deliberado
+        // que sea esta: quien decide si hay que cobrar ya lee `start_at` de todos modos, y
+        // una bandera aparte podría contradecirla (ADR-0015).
         uint64 start_at;
+        // Quién convocó. Es quien puede cerrar la convocatoria y arrancar el reloj: la
+        // decisión de "ya somos suficientes" la toma alguien, y sin dueño la tomaría
+        // cualquiera que llegara primero.
+        address creador;
         uint32 turno;
         uint256 aportado;
         uint256 distribuido;
@@ -225,8 +255,15 @@ impl Junta {
         if periodo == 0 {
             return 0;
         }
-        let ahora = self.vm().block_timestamp();
         let start = j.start_at.get().to::<u64>();
+        // Una junta en convocatoria no tiene reloj todavía. Sin esta rama el cero se leería
+        // como enero de 1970 y la resta contra el reloj de la cadena daría medio siglo de
+        // ciclos: todos los convocados nacerían topados en mora, sin que venciera una sola
+        // cuota (ADR-0015).
+        if start == 0 {
+            return 0;
+        }
+        let ahora = self.vm().block_timestamp();
         let corridos = ahora.saturating_sub(start) / periodo;
         let total = j.miembros.len() as u64;
         corridos.min(total) as u32
@@ -265,9 +302,20 @@ impl Junta {
         self.total_juntas.get().to::<u32>()
     }
 
-    /// Crea una junta y arranca su reloj. Todos los miembros entran al mismo tiempo, así
-    /// que comparten antigüedad; el número de ciclos es el número de miembros, porque la
-    /// junta termina cuando todos cobraron una vez.
+    /// Convoca una junta. Queda **en convocatoria**: existe, tiene parámetros y tiene
+    /// creador, pero su reloj no corre hasta que `arrancar` lo encienda (`start_at == 0`).
+    ///
+    /// Una junta de la vida real se arma reclutando, no declarando de antemano quiénes son
+    /// los ocho. Por eso la lista puede llegar vacía: quien convoca queda dentro por
+    /// definición y el resto se suma con `unirse` mientras la convocatoria siga abierta.
+    ///
+    /// La lista es una siembra, no una declaración exacta: una dirección repetida —o quien
+    /// convoca listándose a sí mismo, que es lo que hace la aplicación— se ignora en vez de
+    /// revertir. Lo que hay que impedir no es el dedazo, sino que una misma persona ocupe
+    /// dos turnos debiendo una sola cuota.
+    ///
+    /// Quien entra primero cobra primero: el turno es la posición de llegada. Es el orden
+    /// más transparente que existe y no necesita sorteo ni árbitro.
     pub fn create_junta(
         &mut self,
         nombre: String,
@@ -275,26 +323,34 @@ impl Junta {
         cuota: U256,
         periodo: u64,
     ) -> Result<u32, JuntaError> {
-        if miembros.is_empty() || cuota.is_zero() || periodo == 0 {
+        if cuota.is_zero() || periodo == 0 {
             return Err(JuntaError::ParametrosInvalidos(ParametrosInvalidos {}));
         }
 
+        let creador = self.vm().msg_sender();
         let junta_id = self.total_juntas.get().to::<u32>();
-        let ahora = self.vm().block_timestamp();
-        let cantidad = miembros.len() as u32;
 
-        let mut j = self.juntas.setter(U32::from(junta_id));
-        j.existe.set(true);
-        j.nombre.set_str(&nombre);
-        j.cuota.set(cuota);
-        j.periodo.set(U64::from(periodo));
-        j.start_at.set(U64::from(ahora));
-        j.turno.set(U32::ZERO);
-        for m in miembros.iter() {
-            j.miembros.push(*m);
-            j.estado.setter(*m).es_miembro.set(true);
+        // El índice inverso se escribe después, en su propio recorrido, porque toca otro
+        // campo del contrato y no se puede tener prestado `juntas` mientras tanto.
+        let mut admitidos: Vec<Address> = Vec::new();
+        {
+            let mut j = self.juntas.setter(U32::from(junta_id));
+            j.existe.set(true);
+            j.nombre.set_str(&nombre);
+            j.cuota.set(cuota);
+            j.periodo.set(U64::from(periodo));
+            j.creador.set(creador);
+            j.turno.set(U32::ZERO);
+            for m in core::iter::once(creador).chain(miembros.iter().copied()) {
+                if j.estado.get(m).es_miembro.get() {
+                    continue;
+                }
+                j.miembros.push(m);
+                j.estado.setter(m).es_miembro.set(true);
+                admitidos.push(m);
+            }
         }
-        for m in miembros.iter() {
+        for m in admitidos.iter() {
             self.juntas_por_miembro.setter(*m).push(U32::from(junta_id));
         }
 
@@ -305,10 +361,123 @@ impl Junta {
                 juntaId: junta_id,
                 cuota,
                 periodo,
-                miembros: cantidad,
+                miembros: admitidos.len() as u32,
             },
         );
         Ok(junta_id)
+    }
+
+    /// El llamante se suma a una junta que todavía está reclutando. Devuelve su turno.
+    ///
+    /// El turno es la posición en que entró, y por eso se asigna aquí y no en `arrancar`:
+    /// quien se une necesita saber en el acto cuándo le toca cobrar, y el orden de llegada
+    /// es la única regla de reparto que nadie tiene que auditar.
+    ///
+    /// Solo funciona en convocatoria. Una vez que el reloj corre, la lista está congelada:
+    /// admitir a alguien más cambiaría el total de ciclos y con él los defaults y la tasa
+    /// de cumplimiento de todos los demás, hacia atrás (ADR-0015).
+    pub fn unirse(&mut self, junta_id: u32) -> Result<u32, JuntaError> {
+        let quien = self.vm().msg_sender();
+        let j = self.juntas.get(U32::from(junta_id));
+        if !j.existe.get() {
+            return Err(JuntaError::JuntaNoExiste(JuntaNoExiste {
+                juntaId: junta_id,
+            }));
+        }
+        if !j.start_at.get().is_zero() {
+            return Err(JuntaError::JuntaYaArrancada(JuntaYaArrancada {
+                juntaId: junta_id,
+            }));
+        }
+        if j.estado.get(quien).es_miembro.get() {
+            return Err(JuntaError::YaEsMiembro(YaEsMiembro {
+                juntaId: junta_id,
+                quien,
+            }));
+        }
+
+        let turno = j.miembros.len() as u32;
+        {
+            let mut j = self.juntas.setter(U32::from(junta_id));
+            j.miembros.push(quien);
+            j.estado.setter(quien).es_miembro.set(true);
+        }
+        self.juntas_por_miembro
+            .setter(quien)
+            .push(U32::from(junta_id));
+
+        log(
+            self.vm(),
+            MemberJoined {
+                juntaId: junta_id,
+                member: quien,
+                turno,
+            },
+        );
+        Ok(turno)
+    }
+
+    /// Cierra la convocatoria: fija el reloj en este instante y congela la lista.
+    ///
+    /// Solo quien convocó puede hacerlo. La decisión de "ya somos suficientes" la tiene que
+    /// tomar alguien, y es la única de este contrato que no se puede derivar de un hecho:
+    /// una junta de cuatro puede estar completa y una de ocho, a medio llenar.
+    ///
+    /// Exige dos miembros porque con uno solo no hay junta: la persona se pagaría su propio
+    /// pozo en un único ciclo, y ningún historial de eso significa nada.
+    ///
+    /// Cero es la señal de convocatoria, así que este contrato asume que el reloj de la
+    /// cadena nunca vale cero. En una cadena real no vale: el bloque génesis ya trae una
+    /// marca de tiempo. En una prueba con el reloj sin fijar, sí — y ahí la junta quedaría
+    /// arrancada y en convocatoria a la vez.
+    pub fn arrancar(&mut self, junta_id: u32) -> Result<(), JuntaError> {
+        let quien = self.vm().msg_sender();
+        let j = self.juntas.get(U32::from(junta_id));
+        if !j.existe.get() {
+            return Err(JuntaError::JuntaNoExiste(JuntaNoExiste {
+                juntaId: junta_id,
+            }));
+        }
+        if j.creador.get() != quien {
+            return Err(JuntaError::NoEsElCreador(NoEsElCreador {
+                juntaId: junta_id,
+                quien,
+            }));
+        }
+        if !j.start_at.get().is_zero() {
+            return Err(JuntaError::JuntaYaArrancada(JuntaYaArrancada {
+                juntaId: junta_id,
+            }));
+        }
+        let miembros = j.miembros.len() as u32;
+        if miembros < 2 {
+            return Err(JuntaError::FaltanMiembros(FaltanMiembros {
+                juntaId: junta_id,
+                miembros,
+            }));
+        }
+
+        let ahora = self.vm().block_timestamp();
+        self.juntas
+            .setter(U32::from(junta_id))
+            .start_at
+            .set(U64::from(ahora));
+
+        log(
+            self.vm(),
+            JuntaStarted {
+                juntaId: junta_id,
+                inicio: ahora,
+                miembros,
+            },
+        );
+        Ok(())
+    }
+
+    /// Quién convocó la junta. Es lo único que decide si `arrancar` va a funcionar, así que
+    /// la aplicación necesita poder preguntarlo antes de ofrecer el botón.
+    pub fn creador_de(&self, junta_id: u32) -> Address {
+        self.juntas.get(U32::from(junta_id)).creador.get()
     }
 
     /// Paga la cuota vencida más antigua que el miembro deba (FIFO).
@@ -324,6 +493,14 @@ impl Junta {
         let j = self.juntas.get(U32::from(junta_id));
         if !j.existe.get() {
             return Err(JuntaError::JuntaNoExiste(JuntaNoExiste {
+                juntaId: junta_id,
+            }));
+        }
+        // Mientras la junta recluta no hay plazos, así que no hay cuota que pueda llegar a
+        // tiempo ni tarde: aceptar dinero aquí registraría puntualidad contra un vencimiento
+        // que todavía no existe (ADR-0015).
+        if j.start_at.get().is_zero() {
+            return Err(JuntaError::JuntaNoArrancada(JuntaNoArrancada {
                 juntaId: junta_id,
             }));
         }
@@ -411,6 +588,15 @@ impl Junta {
             }));
         }
 
+        // Una junta que todavía recluta no tiene turnos vencidos ni pozo que entregar, y su
+        // lista aún puede crecer: repartir aquí le entregaría el turno a alguien de una
+        // rueda que no existe.
+        if j.start_at.get().is_zero() {
+            return Err(JuntaError::JuntaNoArrancada(JuntaNoArrancada {
+                juntaId: junta_id,
+            }));
+        }
+
         let turno = j.turno.get().to::<u32>();
         let total_ciclos = j.miembros.len() as u32;
         if turno >= total_ciclos {
@@ -492,6 +678,15 @@ impl Junta {
         let j = self.juntas.get(U32::from(junta_id));
         if !j.existe.get() {
             return Err(JuntaError::JuntaNoExiste(JuntaNoExiste {
+                juntaId: junta_id,
+            }));
+        }
+        // Antes de arrancar no ha pasado nada entre nadie: no hubo cuotas, ni turnos, ni
+        // pozo. Una disputa perdida en una junta que aún recluta no puede referirse a ningún
+        // hecho, y esta es la única señal del historial que alguien escribe a mano
+        // (ADR-0013): la ventana en que sería gratis fabricarla se cierra aquí.
+        if j.start_at.get().is_zero() {
+            return Err(JuntaError::JuntaNoArrancada(JuntaNoArrancada {
                 juntaId: junta_id,
             }));
         }
@@ -687,6 +882,13 @@ impl Junta {
     ///
     /// Sin esto una aplicación no puede decirle a nadie cuánto debe pagar ni cuándo vence,
     /// que son las dos preguntas que cualquiera se hace antes que ninguna otra.
+    ///
+    /// **`inicio == 0` significa que la junta está en convocatoria**: todavía admite gente,
+    /// no corren plazos y `deposit`, `distribute` y `report_dispute` revierten. No hay ni
+    /// hará falta otra bandera para saberlo, y la forma de este retorno no cambia por eso:
+    /// dos fuentes para el mismo hecho es una que puede contradecir a la otra (ADR-0015).
+    /// `miembros` es el conteo de este momento, y solo deja de moverse cuando `inicio` deja
+    /// de ser cero.
     pub fn junta_params(&self, junta_id: u32) -> (U256, u64, u64, u32, bool) {
         let j = self.juntas.get(U32::from(junta_id));
         (

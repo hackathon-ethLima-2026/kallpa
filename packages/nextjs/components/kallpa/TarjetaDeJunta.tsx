@@ -67,7 +67,20 @@ export const TarjetaDeJunta = ({ juntaId, miembro }: { juntaId: number; miembro?
   const [pozo, ciclo, turno] = estado ?? [];
   const [, , miTurno, yaCobro, debe] = miEstado ?? [];
 
-  if (!info || !estado) {
+  if (!info) {
+    return <div className="k-tarjeta h-56 animate-pulse" />;
+  }
+
+  /**
+   * Una junta que todavía no arranca no tiene reloj: `startAt` vale cero.
+   *
+   * Hay que preguntarlo antes de mirar nada más. El contrato declara cero ciclos mientras
+   * recluta, así que sin esta rama la tarjeta anunciaba "CICLO 1 DE 4" —un ciclo que nadie ha
+   * empezado— y encima "vencido", porque el vencimiento se cuenta desde un inicio que es cero.
+   * Dos afirmaciones falsas sobre una junta que solo está juntando gente.
+   */
+  const enConvocatoria = inicio === 0n;
+  if (!enConvocatoria && !estado) {
     return <div className="k-tarjeta h-56 animate-pulse" />;
   }
 
@@ -88,40 +101,62 @@ export const TarjetaDeJunta = ({ juntaId, miembro }: { juntaId: number; miembro?
           <div>
             <h3 className="k-voz text-xl font-bold text-[--color-marfil]">{nombre || `Junta #${juntaId}`}</h3>
             <p className="k-meta mt-1">
-              {terminada
-                ? "COMPLETA"
-                : cicloActual >= miembros
-                  ? `FALTA${faltanTurnos === 1 ? "" : "N"} ${faltanTurnos} POR COBRAR`
-                  : `CICLO ${cicloActual + 1} DE ${miembros}`}
+              {enConvocatoria
+                ? "EN CONVOCATORIA"
+                : terminada
+                  ? "COMPLETA"
+                  : cicloActual >= miembros
+                    ? `FALTA${faltanTurnos === 1 ? "" : "N"} ${faltanTurnos} POR COBRAR`
+                    : `CICLO ${cicloActual + 1} DE ${miembros}`}
             </p>
           </div>
-          <RuedaDeJunta miembros={miembros} turnosCobrados={turnoActual} size={56} className="shrink-0" />
+          <RuedaDeJunta
+            miembros={miembros}
+            turnosCobrados={enConvocatoria ? 0 : turnoActual}
+            size={56}
+            className="shrink-0"
+          />
         </div>
 
         <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-2">
           <span className="k-prueba text-[15px] text-[--color-oro]">{mUSDC(cuota)} mUSDC / cuota</span>
           <span className="k-prueba text-xs text-[--color-gris]">
-            {terminada
-              ? "junta terminada"
-              : inicio !== undefined && periodo !== undefined
-                ? cuandoVence(inicio, periodo, cicloActual, miembros)
-                : ""}
+            {enConvocatoria
+              ? "aún no arranca"
+              : terminada
+                ? "junta terminada"
+                : inicio !== undefined && periodo !== undefined
+                  ? cuandoVence(inicio, periodo, cicloActual, miembros)
+                  : ""}
           </span>
         </div>
 
         <div className="mt-auto flex flex-wrap items-center gap-2 border-t border-[--color-linea] pt-4">
-          {debeCuotas > 0 ? (
-            <span className="k-tag border-[--color-mal] text-[--color-mal]">
-              debes {debeCuotas} {debeCuotas === 1 ? "cuota" : "cuotas"}
-            </span>
+          {/* En convocatoria no hay nada que deber ni turno que anunciar: lo único cierto es
+              cuánta gente lleva reunida, y que todavía se puede sumar más. */}
+          {enConvocatoria ? (
+            <>
+              <span className="k-tag border-[--color-oro] text-[--color-oro]">
+                {miembros === 1 ? "ya eres 1" : `ya son ${miembros}`}
+              </span>
+              <span className="k-prueba ml-auto text-xs text-[--color-gris]">falta arrancarla</span>
+            </>
           ) : (
-            <span className="k-tag border-[--color-oro] text-[--color-oro]">al día</span>
+            <>
+              {debeCuotas > 0 ? (
+                <span className="k-tag border-[--color-mal] text-[--color-mal]">
+                  debes {debeCuotas} {debeCuotas === 1 ? "cuota" : "cuotas"}
+                </span>
+              ) : (
+                <span className="k-tag border-[--color-oro] text-[--color-oro]">al día</span>
+              )}
+              {yaCobro && <span className="k-tag">ya cobraste</span>}
+              {!yaCobro && miTurno !== undefined && Number(miTurno) < miembros && (
+                <span className="k-tag">tu turno: {Number(miTurno) + 1}º</span>
+              )}
+              <span className="k-prueba ml-auto text-xs text-[--color-gris]">pozo {mUSDC(pozo)}</span>
+            </>
           )}
-          {yaCobro && <span className="k-tag">ya cobraste</span>}
-          {!yaCobro && miTurno !== undefined && Number(miTurno) < miembros && (
-            <span className="k-tag">tu turno: {Number(miTurno) + 1}º</span>
-          )}
-          <span className="k-prueba ml-auto text-xs text-[--color-gris]">pozo {mUSDC(pozo)}</span>
         </div>
       </div>
     </Link>

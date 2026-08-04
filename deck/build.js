@@ -151,7 +151,7 @@ s.addText([
 const tech = [
   ["Score on-chain", "Stylus · Rust", "El modelo de ML corre dentro del contrato, en aritmética de punto fijo. Imposible en Solidity.", ARB],
   ["Integridad verificable", "QR · on-chain", "Cualquier socio comprueba que la caja cuadra —aportado − distribuido = balance— desde su celular, sin confiar en auditores.", GOLD],
-  ["Credencial portable", "EAS", "El score se emite como attestation con el hash del modelo: cualquier protocolo puede leerla.", ARB],
+  ["Credencial portable", "EAS", "Attestation de EAS con la miembro como destinataria y el hash del modelo: viaja con ella y se lee sin conocer a Kallpa.", ARB],
   ["Custodia programática", "Arbitrum", "El pozo vive en el contrato. Las reglas de turno no tienen dueño con llave.", GOLD],
 ];
 tech.forEach((t,i)=>{
@@ -161,7 +161,7 @@ tech.forEach((t,i)=>{
   s.addText(t[1], { x: x+3.35, y: y+0.22, w: 2.05, h: 0.3, fontFace: MONO, fontSize: 10.5, color: t[3], align: "right", margin: 0 });
   s.addText(t[2], { x: x+0.3, y: y+0.6, w: 5.0, h: 0.7, fontFace: F, fontSize: 12, color: MUTED, lineSpacing: 15.5, margin: 0 });
 });
-s.addText("Nuestro modelo corre EN cadena por [X] gas — medido en record_score, no citado (Stylus ≈ 10x más barato que EVM).",
+s.addText("Nuestro modelo corre EN cadena por 163,695 gas — medido en record_score sobre un historial completo, no citado.",
   { x: MX, y: 6.55, w: 11.3, h: 0.35, fontFace: F, fontSize: 13, color: MUTED, margin: 0 });
 
 // ============ 7 · REPUTACIÓN BIDIRECCIONAL ============
@@ -172,8 +172,8 @@ s.addText([
   { text: "El nuestro también castiga.", options: { color: BG, highlight: GOLD } },
 ], { x: MX, y: 1.05, w: 11.5, h: 1.75, fontFace: F, fontSize: 38, bold: true, lineSpacing: 45, margin: 0 });
 const bidi = [
-  ["SI CUMPLES", "Ciclos puntuales", "El Pool amplía tu línea recomputando tu historial en vivo al prestar — automático, sin comité.", "628 → 781", "línea 120 → 200", GOLD, GOLD],
-  ["SI FALLAS", "Cuota vencida · disputa perdida", "No hay nada que firmar para castigarte: el default aparece solo con el reloj y el Pool cierra tu crédito al recomputar.", "781 → 355", "× sin crédito", MUTED, BORDER],
+  ["SI CUMPLES", "Ocho ciclos puntuales", "El Pool abre tu línea recomputando tu historial en vivo al prestar — automático, sin comité.", "1000", "línea 200 USDC", GOLD, GOLD],
+  ["SI FALLAS", "Cuota vencida · disputa perdida", "No hay nada que firmar para castigarte: el default aparece solo con el reloj. Y el Pool decide con tu peor junta, no con la que tú elijas.", "194", "× sin crédito", MUTED, BORDER],
 ];
 bidi.forEach((c,i)=>{
   const x = MX + i*5.95, y = 3.1, w = 5.6, h = 2.6;
@@ -195,7 +195,7 @@ const archNodes = [
   ["App Kallpa", "Scaffold-Stylus", "Español simple, la wallet es la cuenta. Sin backend ni base de datos."],
   ["Contrato Junta", "custodia · turnos", "Guarda el pozo y paga turnos en orden. No existe retiro de admin."],
   ["Motor de Score", "Stylus · Rust · ML", "Inferencia del modelo en punto fijo, dentro del contrato."],
-  ["EAS + Pool", "attestation · crédito", "El score se attesta (copia que viaja); el Pool presta o suspende recomputando el score en vivo."],
+  ["EAS + Pool", "attestation · crédito", "El score se attesta a nombre de la miembro; el Pool presta mirando su peor junta, no la que ella elija."],
 ];
 archNodes.forEach((n,i)=>{
   const x = MX + i*3.02;
@@ -218,13 +218,13 @@ chip(s, "Código abierto en GitHub", MX+4.3, 6.45, 2.6, GOLD);
 s = p.addSlide(); base(s);
 kicker(s, "El momento demo", 1.05);
 s.addText("Audita la caja\ndesde tu celular.", { x: MX, y: 1.45, w: 6.4, h: 1.7, fontFace: F, fontSize: 37, bold: true, color: INK, lineSpacing: 43, margin: 0 });
-s.addText("María lleva su junta completa — 8 ciclos puntuales. Un clic: record_score computa su score — 781 — en Stylus (tx en Arbiscan) y el Pool, recomputando su historial vivo, le presta 200 USDC. Sin ventanilla, sin fiador, sin caja negra.",
+s.addText("María cerró \"Las Emprendedoras\" con sus ocho cuotas puntuales: record_score la computa en Stylus y le da 1000, el máximo (tx en Arbiscan). En \"Los del Mercado\" cobró el pozo y dejó de aportar: 194.",
   { x: MX, y: 3.3, w: 5.9, h: 1.05, fontFace: F, fontSize: 14, color: MUTED, lineSpacing: 19, margin: 0 });
-s.addText("El reverso, sin que nadie mueva un dedo: en la junta \"mala\" una cuota venció, el default apareció solo con el reloj, y el crédito se cerró.",
-  { x: MX, y: 4.42, w: 5.9, h: 0.75, fontFace: F, fontSize: 14, color: MUTED, lineSpacing: 19, margin: 0 });
+s.addText("La misma dirección, dos veredictos. El Pool no le pregunta cuál mirar: decide con la peor y le cierra el crédito. Nadie declaró nada — el default lo puso el reloj.",
+  { x: MX, y: 4.42, w: 5.9, h: 0.75, fontFace: F, fontSize: 14, color: INK, lineSpacing: 19, margin: 0 });
 s.addText("Y en vivo: el jurado escanea el QR y ve CUADRA. Mandamos 100 USDC sueltos al contrato → el QR salta a NO CUADRA. La caja se autodenuncia.",
   { x: MX, y: 5.28, w: 5.9, h: 0.75, fontFace: F, fontSize: 14.5, color: INK, lineSpacing: 20, margin: 0 });
-s.addText("kallpa.vercel.app/auditar · Arbitrum Sepolia", { x: MX, y: 6.35, w: 5.9, h: 0.3, fontFace: MONO, fontSize: 11, color: GOLDD, margin: 0 });
+s.addText("kallpa-one.vercel.app/auditar · Arbitrum Sepolia", { x: MX, y: 6.35, w: 5.9, h: 0.3, fontFace: MONO, fontSize: 11, color: GOLDD, margin: 0 });
 // QR estilizado
 const qx = 8.0, qy = 1.55, cell = 0.185, grid = [
 "1111101010011111","1000101101010001","1011101010110111","1011100110110111",
@@ -241,7 +241,7 @@ kicker(s, "Por qué Arbitrum");
 s.addText("Construido sobre lo que Arbitrum\npidió que se construyera.", { x: MX, y: 1.05, w: 11.4, h: 1.75, fontFace: F, fontSize: 40, bold: true, color: INK, lineSpacing: 46, margin: 0 });
 const arb = [
   ["Stylus", "Su blog oficial lista el cómputo intensivo en Rust/WASM como oportunidad de construcción. Nuestro motor de score es exactamente eso."],
-  ["EAS en Arbitrum", "El estándar de attestations ya vive en Arbitrum One y Nova — el mismo que usa Coinbase para credenciales en producción."],
+  ["EAS en Arbitrum", "El estándar que usa Coinbase en producción ya vive en Arbitrum — y el nuestro ya está ahí: schema registrado y attestation emitida en Sepolia."],
   ["Scaffold-Stylus", "Frontend y flujo de contratos sobre el stack del bounty Advanced: Stylus + IA, desplegado en Arbitrum Sepolia."],
 ];
 arb.forEach((r,i)=>{

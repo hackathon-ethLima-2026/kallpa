@@ -52,8 +52,8 @@ const Portada: NextPage = () => {
         <Vacio
           titulo="Todavía no estás en ninguna junta"
           detalle={
-            "Puedes crear una con las direcciones de tu grupo, o pedirle a quien organiza la " +
-            "tuya que te agregue. Los miembros se definen al crearla, igual que en una junta de verdad."
+            "Puedes crear una y pasarle el enlace a tu grupo, o pedirle el suyo a quien organiza " +
+            "la tuya. Se entra antes de que arranque: el día que arranca, la lista se cierra."
           }
           accion={
             <div className="flex flex-wrap gap-3">
