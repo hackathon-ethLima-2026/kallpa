@@ -18,9 +18,16 @@ ETH de prueba para pagar el gas.
    billetera de teléfono: busca la opción de MetaMask directamente.
 3. Te va a decir **"Red incorrecta"**. Dale a **cambiar a Arbitrum Sepolia**; MetaMask la
    agrega sola.
-4. Consigue ETH de prueba. Los grifos de Arbitrum Sepolia suelen exigir saldo en la red
-   principal; el camino que sí funcionó fue minar Sepolia L1 en <https://sepolia-faucet.pk10.net>
-   y pasarlo con `packages/stylus/scripts/bridge_to_arbitrum_sepolia.mjs`.
+4. Consigue ETH de prueba. Casi todos los grifos de Arbitrum Sepolia exigen tener saldo en la
+   red principal de Ethereum, así que no sirven. El camino que sí funcionó:
+   - Minar Sepolia L1 en **<https://sepolia-faucet.pk910.de/>** — es prueba de trabajo en el
+     navegador, no pide cuenta ni saldo previo. Con dejarlo unos minutos alcanza.
+   - Pasarlo a Arbitrum Sepolia con el guion del repositorio:
+     ```bash
+     cd packages/stylus
+     PRIVATE_KEY_SEPOLIA=0x... node scripts/bridge_to_arbitrum_sepolia.mjs
+     ```
+     El puente tarda alrededor de diez minutos en acreditar del otro lado.
 5. El dinero de la aplicación es un token de juguete que **cualquiera puede acuñar**: hay un
    botón **"Conseguir 500 mUSDC de prueba"** dentro de la aplicación. No necesitas pedirle
    fondos a nadie.
