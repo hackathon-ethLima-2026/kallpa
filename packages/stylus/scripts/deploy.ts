@@ -25,6 +25,9 @@ if (fs.existsSync(envPath)) {
  */
 const EAS_POR_OMISION = "0x2521021fc8BF070473E1e1801D3c7B4aB701E1dE";
 
+/** Plazo del préstamo, en segundos. Una semana. */
+const PLAZO_POR_OMISION = "604800";
+
 /**
  * UID de nuestro schema (§6.5).
  *
@@ -105,10 +108,15 @@ export default async function deployScript(deployOptions: DeployOptions) {
   const scoreEngine = direccionDe("score_engine");
 
   // 4. El crédito. Paga en el token y consulta al motor en el momento de decidir.
+  //
+  // El plazo es política del fondo y no del protocolo —quien pone el capital decide a cuánto
+  // presta—, así que entra por constructor. Una semana es un plazo razonable para un
+  // microcrédito y deja la mora demostrable sin que se dispare sola durante la demostración.
   console.log("\n── 4/4  pool ───────────────────────────────────────────");
+  const plazo = process.env["PLAZO_PRESTAMO"] || PLAZO_POR_OMISION;
   await deployStylusContract({
     contract: "pool",
-    constructorArgs: [token, scoreEngine],
+    constructorArgs: [token, scoreEngine, plazo],
     ...deployOptions,
   });
 

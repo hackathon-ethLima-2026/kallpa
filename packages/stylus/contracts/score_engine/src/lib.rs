@@ -113,6 +113,16 @@ const MINIMO_CICLOS: u32 = 3;
 /// junta no aporta ni evidencia buena ni mala.
 const MINIMO_CICLOS_OBSERVABLES: u32 = 1;
 
+/// Cuántas juntas puede tener un miembro para que su veredicto global se pueda computar.
+///
+/// El número no sale de ninguna teoría: sale de que cada junta cuesta una lectura al contrato
+/// Junta dentro de la transacción que decide un préstamo, y ese gas lo paga quien pide. Con
+/// treinta y dos hay margen de sobra para cualquier persona real —una junta dura tantos ciclos
+/// como miembros tiene, así que llevar treinta y dos a la vez es una vida entera de ahorro— y
+/// el techo evita que una dirección fabricada con cientos de juntas vuelva impagable la
+/// consulta.
+const MAXIMO_JUNTAS_EVALUABLES: u32 = 32;
+
 /// Cuánto vale una attestation antes de que haya que rehacerla (§6.5).
 ///
 /// El historial de una junta viva sigue moviéndose, así que una attestation de hace meses
@@ -182,6 +192,13 @@ sol! {
 
     #[derive(Debug)]
     error AttestationFallida(uint32 juntaId, address member);
+
+    /// El miembro tiene más juntas de las que se pueden recorrer en una sola consulta.
+    ///
+    /// Dice cuántas tiene y cuál es el techo, porque un revert sin números obligaría a quien
+    /// lo recibe a adivinar si le faltan dos juntas o doscientas.
+    #[derive(Debug)]
+    error DemasiadasJuntas(address member, uint32 juntas, uint32 maximo);
 }
 
 #[derive(SolidityError, Debug)]
@@ -189,6 +206,7 @@ pub enum ScoreError {
     LecturaDeJuntaFallida(LecturaDeJuntaFallida),
     ListaDeJuntasFallida(ListaDeJuntasFallida),
     AttestationFallida(AttestationFallida),
+    DemasiadasJuntas(DemasiadasJuntas),
 }
 
 sol_storage! {
@@ -663,6 +681,19 @@ impl ScoreEngine {
     /// bytes reales, y ya nos costó un fallo una vez.
     pub fn score_global(&self, member: Address) -> Result<(u16, bool, u32), ScoreError> {
         let juntas = self.juntas_del_miembro(member)?;
+
+        // Cada junta cuesta una lectura al contrato Junta, así que el costo crece con cuántas
+        // tenga el miembro. Se pone un techo, y al pasarlo se **revierte** en vez de mirar
+        // solo las primeras: truncar en silencio abriría la puerta a esconder la peor junta
+        // más allá del corte, que es exactamente el hueco que esta función existe para cerrar.
+        // Un revert es incómodo y honesto; una respuesta incompleta que parece completa, no.
+        if juntas.len() > MAXIMO_JUNTAS_EVALUABLES as usize {
+            return Err(ScoreError::DemasiadasJuntas(DemasiadasJuntas {
+                member,
+                juntas: juntas.len() as u32,
+                maximo: MAXIMO_JUNTAS_EVALUABLES,
+            }));
+        }
 
         let mut peor: u16 = 0;
         let mut evaluadas: u32 = 0;

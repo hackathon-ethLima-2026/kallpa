@@ -7,9 +7,9 @@ import { GenericContractsDeclaration } from "../utils/scaffold-eth/contract";
 const deployedContracts = {
   "421614": {
     mock_usdc: {
-      address: "0x9f49b8ace3c9e308f87074caf9f17080f9f021c9",
+      address: "0x25e00931e86ba7eef56f1de25c3e82a1a94f1b2b",
       txHash:
-        "0x913b11ec1ff5d7ad54d53e1925d2afabdbdb3770b901fce99dc499914e2b06a8",
+        "0x56946d170024baa2e567bdf03944172aec5b4fbd198c18b1e59adcddcb1320e0",
       abi: [
         {
           inputs: [
@@ -262,9 +262,9 @@ const deployedContracts = {
       ],
     },
     junta: {
-      address: "0xd883f27cab713eeb3a9f4f133c134d9815145ae7",
+      address: "0xd52d2b8b1d44de65667b47ab531293581c6d09a9",
       txHash:
-        "0x071985fdb4e294bb34343b1f994bff003b6299cf05d36af28e84613c4c4ae334",
+        "0xaf51f53eda5e1d0253f722fc1c96cc693083cc783e6faa7a83b4355a05832fc9",
       abi: [
         {
           inputs: [
@@ -946,9 +946,9 @@ const deployedContracts = {
       ],
     },
     score_engine: {
-      address: "0x75df0bf616848eb83138ddfbc3220551043868f6",
+      address: "0x2de01abec172185cfb026d6d496d4207a983e5bf",
       txHash:
-        "0x8c094ce19af669980b3dc544c5e80a5b1fed3e394579a6bcfea00061b1ded676",
+        "0x4c7b1a5bcd633478173fe96a6005183ed26c967a2b2643aa9c3cad9e9700388f",
       abi: [
         {
           inputs: [
@@ -964,6 +964,27 @@ const deployedContracts = {
             },
           ],
           name: "AttestationFallida",
+          type: "error",
+        },
+        {
+          inputs: [
+            {
+              internalType: "address",
+              name: "",
+              type: "address",
+            },
+            {
+              internalType: "uint32",
+              name: "",
+              type: "uint32",
+            },
+            {
+              internalType: "uint32",
+              name: "",
+              type: "uint32",
+            },
+          ],
+          name: "DemasiadasJuntas",
           type: "error",
         },
         {
@@ -1286,9 +1307,9 @@ const deployedContracts = {
       ],
     },
     pool: {
-      address: "0x33424ea2762bc18a5435036f365e02f7567ccf27",
+      address: "0x2a3dd4bed7fdd6b4137c83421fadff9038a084f2",
       txHash:
-        "0x299df3216a09efab68711c46469abb15b1b3b36fee442d8754e9ce8f97e643e7",
+        "0xbdbe0f581c058d694789708ea3cfc8dae8d274b24165602ebef7ddeb7f10d4d5",
       abi: [
         {
           inputs: [
@@ -1345,6 +1366,22 @@ const deployedContracts = {
               name: "",
               type: "address",
             },
+            {
+              internalType: "uint64",
+              name: "",
+              type: "uint64",
+            },
+          ],
+          name: "PrestamoVencido",
+          type: "error",
+        },
+        {
+          inputs: [
+            {
+              internalType: "address",
+              name: "",
+              type: "address",
+            },
           ],
           name: "ScoreNoDisponible",
           type: "error",
@@ -1376,6 +1413,25 @@ const deployedContracts = {
           name: "depositLiquidity",
           outputs: [],
           stateMutability: "nonpayable",
+          type: "function",
+        },
+        {
+          inputs: [
+            {
+              internalType: "address",
+              name: "member",
+              type: "address",
+            },
+          ],
+          name: "estaEnMora",
+          outputs: [
+            {
+              internalType: "bool",
+              name: "",
+              type: "bool",
+            },
+          ],
+          stateMutability: "view",
           type: "function",
         },
         {
@@ -1435,6 +1491,19 @@ const deployedContracts = {
               internalType: "bool",
               name: "",
               type: "bool",
+            },
+          ],
+          stateMutability: "view",
+          type: "function",
+        },
+        {
+          inputs: [],
+          name: "plazo",
+          outputs: [
+            {
+              internalType: "uint64",
+              name: "",
+              type: "uint64",
             },
           ],
           stateMutability: "view",

@@ -17,6 +17,8 @@ const MARIA: Address = Address::new([1u8; 20]);
 
 /// Cuántas juntas dice haber evaluado el motor cuando la prueba no mira ese número.
 const JUNTAS: u32 = 2;
+/// El plazo del fondo en las pruebas: una semana, como el del despliegue.
+const PLAZO: u64 = 604_800;
 
 /// La respuesta que daría el ScoreEngine: tres palabras de treinta y dos bytes.
 fn respuesta_del_motor(peor_score: u16, con_credito: bool, juntas_evaluadas: u32) -> Vec<u8> {
@@ -35,7 +37,7 @@ fn respuesta_del_motor(peor_score: u16, con_credito: bool, juntas_evaluadas: u32
 fn pool_con_juntas(peor_score: u16, con_credito: bool, juntas_evaluadas: u32) -> (TestVM, Pool) {
     let vm = TestVM::default();
     let mut pool = Pool::from(&vm);
-    pool.constructor(TOKEN, MOTOR);
+    pool.constructor(TOKEN, MOTOR, PLAZO);
     vm.set_sender(MARIA);
 
     let datos = scoreGlobalCall { member: MARIA }.abi_encode();
@@ -68,7 +70,7 @@ fn con_liquidez(pool: &mut Pool, monto: u64) {
 fn cada_tramo_presta_lo_que_le_toca() {
     let vm = TestVM::default();
     let mut pool = Pool::from(&vm);
-    pool.constructor(TOKEN, MOTOR);
+    pool.constructor(TOKEN, MOTOR, PLAZO);
 
     assert_eq!(pool.tramo(1000), U256::from(200_000_000u64));
     assert_eq!(pool.tramo(750), U256::from(200_000_000u64));
@@ -86,7 +88,7 @@ fn el_corte_del_primer_tramo_coincide_con_el_umbral_de_reputacion() {
     // el Pool le niega el préstamo, o al revés. Un solo umbral gobierna las dos preguntas.
     let vm = TestVM::default();
     let mut pool = Pool::from(&vm);
-    pool.constructor(TOKEN, MOTOR);
+    pool.constructor(TOKEN, MOTOR, PLAZO);
 
     assert_eq!(pool.tramo(399), U256::ZERO);
     assert!(pool.tramo(400) > U256::ZERO);
@@ -96,7 +98,7 @@ fn el_corte_del_primer_tramo_coincide_con_el_umbral_de_reputacion() {
 fn un_score_mas_alto_nunca_presta_menos() {
     let vm = TestVM::default();
     let mut pool = Pool::from(&vm);
-    pool.constructor(TOKEN, MOTOR);
+    pool.constructor(TOKEN, MOTOR, PLAZO);
 
     let mut anterior = U256::ZERO;
     for score in 0..=1000u16 {
@@ -161,7 +163,7 @@ fn si_el_motor_no_responde_no_se_presta() {
     // sería entregar dinero respaldado por nada.
     let vm = TestVM::default();
     let mut pool = Pool::from(&vm);
-    pool.constructor(TOKEN, MOTOR);
+    pool.constructor(TOKEN, MOTOR, PLAZO);
     vm.set_sender(MARIA);
     con_liquidez(&mut pool, 1_000_000_000);
 
@@ -193,6 +195,80 @@ fn no_se_puede_pedir_dos_prestamos_a_la_vez() {
     assert!(pool.request_loan().is_err());
 }
 
+// =====================================================================================
+// La mora: que no devolver tenga consecuencia
+// =====================================================================================
+
+/// Deja a María con un préstamo abierto concedido en `concedido_en`.
+fn con_prestamo_desde(pool: &mut Pool, concedido_en: u64) {
+    let mut p = pool.prestamos.setter(MARIA);
+    p.monto.set(U256::from(200_000_000u64));
+    p.momento
+        .set(stylus_sdk::alloy_primitives::U64::from(concedido_en));
+    p.activo.set(true);
+}
+
+#[test]
+fn dentro_del_plazo_no_hay_mora() {
+    let (vm, mut pool) = pool_con(990, true);
+    con_prestamo_desde(&mut pool, 1_000);
+
+    vm.set_block_timestamp(1_000 + PLAZO);
+    assert!(
+        !pool.esta_en_mora(MARIA),
+        "el último segundo del plazo todavía es plazo"
+    );
+}
+
+#[test]
+fn pasado_el_plazo_el_prestamo_esta_en_mora() {
+    // Antes esto no existía: se guardaba el instante del préstamo y no se volvía a leer
+    // jamás, así que "no devolver" y "todavía no devolver" eran el mismo estado.
+    let (vm, mut pool) = pool_con(990, true);
+    con_prestamo_desde(&mut pool, 1_000);
+
+    vm.set_block_timestamp(1_000 + PLAZO + 1);
+    assert!(pool.esta_en_mora(MARIA));
+}
+
+#[test]
+fn quien_esta_en_mora_recibe_un_error_que_lo_dice() {
+    // Los dos rechazos impiden pedir otro préstamo, pero no significan lo mismo: uno señala a
+    // quien está usando su línea y el otro a quien dejó de cumplir. Un solo error para ambos
+    // le esconde a quien lee el revert la única de las dos cosas que es un incumplimiento.
+    let (vm, mut pool) = pool_con(990, true);
+    con_prestamo_desde(&mut pool, 1_000);
+    con_liquidez(&mut pool, 1_000_000_000);
+
+    vm.set_block_timestamp(1_000 + PLAZO / 2);
+    match pool.request_loan() {
+        Err(PoolError::YaTienePrestamoActivo(_)) => {}
+        otro => panic!("dentro del plazo no está en mora, solo ocupado: {otro:?}"),
+    }
+
+    vm.set_block_timestamp(1_000 + PLAZO + 1);
+    match pool.request_loan() {
+        Err(PoolError::PrestamoVencido(e)) => {
+            assert_eq!(e.member, MARIA);
+            assert_eq!(
+                e.vencio,
+                1_000 + PLAZO,
+                "dice cuándo venció, no solo que venció"
+            );
+        }
+        otro => panic!("pasado el plazo el error tiene que nombrar la mora: {otro:?}"),
+    }
+}
+
+#[test]
+fn sin_prestamo_abierto_nadie_esta_en_mora() {
+    // El reloj corre para todos: sin esta guarda, cualquier dirección que jamás pidió nada
+    // aparecería en mora con solo pasar el tiempo, porque su instante guardado es cero.
+    let (vm, pool) = pool_con(990, true);
+    vm.set_block_timestamp(10_000_000);
+    assert!(!pool.esta_en_mora(MARIA));
+}
+
 #[test]
 fn devolver_sin_prestamo_activo_falla() {
     let (_vm, mut pool) = pool_con(990, true);
@@ -207,7 +283,7 @@ fn devolver_sin_prestamo_activo_falla() {
 fn lo_disponible_es_la_liquidez_menos_lo_prestado() {
     let vm = TestVM::default();
     let mut pool = Pool::from(&vm);
-    pool.constructor(TOKEN, MOTOR);
+    pool.constructor(TOKEN, MOTOR, PLAZO);
 
     con_liquidez(&mut pool, 500_000_000);
     pool.prestado_vigente.set(U256::from(200_000_000u64));
@@ -224,7 +300,7 @@ fn un_prestamo_sin_devolver_mantiene_baja_la_disponibilidad() {
     // solvencia significa algo, y por eso vive en este contrato y no en la Junta.
     let vm = TestVM::default();
     let mut pool = Pool::from(&vm);
-    pool.constructor(TOKEN, MOTOR);
+    pool.constructor(TOKEN, MOTOR, PLAZO);
 
     con_liquidez(&mut pool, 200_000_000);
     pool.prestado_vigente.set(U256::from(200_000_000u64));
@@ -274,7 +350,7 @@ fn una_respuesta_mas_corta_de_lo_esperado_no_se_interpreta() {
     // consulta falla y el préstamo se cae: una interfaz desincronizada tiene que romperse.
     let vm = TestVM::default();
     let mut pool = Pool::from(&vm);
-    pool.constructor(TOKEN, MOTOR);
+    pool.constructor(TOKEN, MOTOR, PLAZO);
     vm.set_sender(MARIA);
     vm.mock_static_call(
         MOTOR,

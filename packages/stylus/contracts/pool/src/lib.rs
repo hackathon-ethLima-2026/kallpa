@@ -97,6 +97,14 @@ sol! {
     error TransferenciaFallida();
     #[derive(Debug)]
     error MontoInvalido();
+    /// El préstamo pasó su fecha de vencimiento y sigue sin devolverse.
+    ///
+    /// Va aparte de `YaTienePrestamoActivo` a propósito: los dos impiden pedir otro, pero no
+    /// dicen lo mismo. Uno señala a alguien que está usando su línea; el otro, a alguien que
+    /// dejó de cumplir. Confundirlos en un solo error le esconde a quien lea el revert la
+    /// única de las dos cosas que es un incumplimiento.
+    #[derive(Debug)]
+    error PrestamoVencido(address member, uint64 vencio);
 }
 
 #[derive(SolidityError, Debug)]
@@ -108,6 +116,7 @@ pub enum PoolError {
     ScoreNoDisponible(ScoreNoDisponible),
     TransferenciaFallida(TransferenciaFallida),
     MontoInvalido(MontoInvalido),
+    PrestamoVencido(PrestamoVencido),
 }
 
 sol_storage! {
@@ -127,6 +136,14 @@ sol_storage! {
     pub struct Pool {
         address token;
         address score_engine;
+        /// Cuánto tiempo tiene quien pide para devolver, en segundos.
+        ///
+        /// Sin esto un préstamo no vencía nunca: se guardaba el instante en que se concedió y
+        /// no se volvía a leer jamás, así que "no devolver" y "todavía no devolver" eran el
+        /// mismo estado y ninguno tenía consecuencia. Va en el constructor y no fijo en el
+        /// código porque el plazo es política del fondo, no del protocolo: quien pone el
+        /// capital decide a cuánto presta.
+        uint64 plazo;
         uint256 liquidez;
         uint256 prestado_vigente;
         mapping(address => Prestamo) prestamos;
@@ -201,9 +218,32 @@ impl Pool {
 #[public]
 impl Pool {
     #[constructor]
-    pub fn constructor(&mut self, token: Address, score_engine: Address) {
+    pub fn constructor(&mut self, token: Address, score_engine: Address, plazo: u64) {
         self.token.set(token);
         self.score_engine.set(score_engine);
+        self.plazo.set(U64::from(plazo));
+    }
+
+    /// El plazo del fondo, en segundos.
+    pub fn plazo(&self) -> u64 {
+        self.plazo.get().to::<u64>()
+    }
+
+    /// Si el miembro tiene un préstamo vencido sin devolver.
+    ///
+    /// Es una vista y no un estado guardado porque la mora **se deriva del reloj**, igual que
+    /// los incumplimientos de una junta (ADR-0005). Nadie tiene que mandar una transacción
+    /// para declarar a alguien en mora: llega la fecha y lo está. Y quien deja de pagar nunca
+    /// firma la transacción que lo delata.
+    ///
+    /// Se cura devolviendo, como todo en Kallpa. No es una marca permanente.
+    pub fn esta_en_mora(&self, member: Address) -> bool {
+        let p = self.prestamos.get(member);
+        if !p.activo.get() {
+            return false;
+        }
+        let vence = p.momento.get().to::<u64>() + self.plazo.get().to::<u64>();
+        self.vm().block_timestamp() > vence
     }
 
     pub fn token(&self) -> Address {
@@ -255,7 +295,17 @@ impl Pool {
     pub fn request_loan(&mut self) -> Result<U256, PoolError> {
         let member = self.vm().msg_sender();
 
+        // Se distingue tener un préstamo de deberlo. Los dos impiden pedir otro, pero el
+        // segundo es un incumplimiento y quien lea el revert merece saber cuál de los dos es.
         if self.prestamos.get(member).activo.get() {
+            if self.esta_en_mora(member) {
+                let vencio = self.prestamos.get(member).momento.get().to::<u64>()
+                    + self.plazo.get().to::<u64>();
+                return Err(PoolError::PrestamoVencido(PrestamoVencido {
+                    member,
+                    vencio,
+                }));
+            }
             return Err(PoolError::YaTienePrestamoActivo(YaTienePrestamoActivo {
                 member,
             }));

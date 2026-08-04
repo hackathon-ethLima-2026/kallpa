@@ -44,6 +44,9 @@ const fechaLarga = (segundos: bigint) =>
  * contrato de EAS, que ni siquiera sabe que existimos. La firma está comprobada contra la
  * cadena en `docs/eas-arbitrum-sepolia.md`.
  */
+/** Un `bytes32` en ceros: así responde el contrato cuando todavía no hay attestation. */
+const VACIO = `0x${"0".repeat(64)}`;
+
 const ATTESTED = parseAbiItem(
   "event Attested(address indexed recipient, address indexed attester, bytes32 uid, bytes32 indexed schemaUID)",
 );
@@ -183,7 +186,24 @@ export default function MiScore() {
     getBlockExplorerTxLink(targetNetwork.id, hash) || `https://sepolia.arbiscan.io/tx/${hash}`;
 
   const enlaceComprobante = comprobante && comprobante.junta === juntaId ? enlaceDeTx(comprobante.hash) : null;
-  const laAttestation = attestation && attestation.junta === juntaId ? attestation : null;
+  const recienPublicada = attestation && attestation.junta === juntaId ? attestation : null;
+  /**
+   * La attestation que ya vive en la cadena para esta junta.
+   *
+   * Sin esta lectura, el identificador solo existía en el estado de React: bastaba recargar la
+   * página para que el comprobante de algo permanente desapareciera de la pantalla, que es
+   * justo lo contrario de lo que una attestation significa. El contrato lo guarda; había que
+   * preguntárselo.
+   */
+  const { data: uidGuardado, refetch: releerAttestation } = useScaffoldReadContract({
+    contractName: "score_engine",
+    functionName: "latestAttestation",
+    args: [juntaId, address],
+  });
+  const uidEnCadena = uidGuardado && uidGuardado !== VACIO ? (uidGuardado as string) : undefined;
+  // Lo recién publicado manda porque trae además el enlace a su transacción; lo guardado es
+  // lo que sostiene la pantalla cuando alguien vuelve otro día.
+  const laAttestation = recienPublicada ?? (uidEnCadena ? { uid: uidEnCadena, hash: undefined, junta: juntaId } : null);
 
   const registrar = async () => {
     if (juntaId === undefined || !address) return;
@@ -219,6 +239,10 @@ export default function MiScore() {
         { onBlockConfirmation: (recibo: TransactionReceipt) => (uid = uidDeLaAttestation(recibo)) },
       );
       if (hash) setAttestation({ hash, uid, junta: juntaId });
+      // Se relee lo que el contrato guardó: si el identificador no salió del recibo, esta
+      // lectura lo recupera igual, y deja la pantalla en el mismo estado en que la encontrará
+      // quien vuelva mañana.
+      await releerAttestation();
     } finally {
       setAtestiguando(false);
     }
@@ -511,14 +535,19 @@ export default function MiScore() {
                           {laAttestation.uid
                             ? "Con ese identificador cualquiera lee la attestation completa desde el registro, sin pasar por Kallpa."
                             : "La publicación quedó hecha, aunque el identificador no se pudo leer del comprobante. La transacción lo contiene."}{" "}
-                          <a
-                            className="text-[--color-oro] underline underline-offset-4"
-                            href={enlaceDeTx(laAttestation.hash)}
-                            target="_blank"
-                            rel="noreferrer"
-                          >
-                            Ver la attestation
-                          </a>
+                          {/* El enlace a la transacción solo existe si la publicaste en esta
+                              visita. Al volver otro día queda el identificador, que es lo que
+                              de verdad importa: con él se lee la attestation entera. */}
+                          {laAttestation.hash && (
+                            <a
+                              className="text-[--color-oro] underline underline-offset-4"
+                              href={enlaceDeTx(laAttestation.hash)}
+                              target="_blank"
+                              rel="noreferrer"
+                            >
+                              Ver la transacción
+                            </a>
+                          )}
                         </p>
                       </div>
                     )}

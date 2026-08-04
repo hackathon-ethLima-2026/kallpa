@@ -690,6 +690,19 @@ impl Junta {
                 juntaId: junta_id,
             }));
         }
+        // Y después de que todos cobraron tampoco: la junta cerró y su historial quedó fijo.
+        //
+        // La interfaz promete exactamente eso —"su historial quedó fijo para siempre"— y sin
+        // esta guarda el contrato no lo cumplía: se podía seguir hundiendo el score de alguien
+        // por una junta cerrada hace meses, sin límite de tiempo y sin que la víctima pudiera
+        // hacer nada, porque en una junta terminada ya no hay forma de compensar pagando.
+        // Dos fuentes de verdad diciendo cosas distintas es peor que cualquiera de las dos.
+        let turno = j.turno.get().to::<u32>();
+        if turno >= j.miembros.len() as u32 {
+            return Err(JuntaError::JuntaCompleta(JuntaCompleta {
+                juntaId: junta_id,
+            }));
+        }
         // El error señala al llamante y no al reportado: quien no pertenece a la junta no
         // presenció nada, así que lo que está mal es quién habla, no de quién habla.
         if !j.estado.get(reportante).es_miembro.get() {

@@ -127,6 +127,19 @@ export default function PedirCredito() {
   const scoreAlPrestar = prestamo?.[3] as number | undefined;
   const prestamoActivo = prestamo?.[4] as boolean | undefined;
 
+  // El plazo es política del fondo, así que se pregunta en vez de asumirse: dos despliegues
+  // del mismo contrato pueden prestar a plazos distintos.
+  const { data: plazo } = useScaffoldReadContract({ contractName: "pool", functionName: "plazo" });
+  const { data: enMora } = useScaffoldReadContract({
+    contractName: "pool",
+    functionName: "estaEnMora",
+    args: [address],
+  });
+  const venceEl =
+    momentoPrestamo !== undefined && plazo !== undefined
+      ? new Date((Number(momentoPrestamo) + Number(plazo)) * 1000)
+      : undefined;
+
   const minimo = Number(minimoCiclos ?? 3);
   const umbral = Number(umbralPositivo ?? 400);
   const evaluadas = juntasEvaluadas === undefined ? undefined : Number(juntasEvaluadas);
@@ -309,17 +322,28 @@ export default function PedirCredito() {
                     <Dato termino="Debes" valor={`${mUSDC(montoPrestamo)} mUSDC`} destacado />
                     <Dato termino="Juntas evaluadas" valor={String(Number(juntasDelPrestamo ?? 0))} />
                     <Dato termino="Peor score al prestar" valor={String(scoreAlPrestar ?? 0)} />
+                    {/* La fecha límite pesa más que la de concesión: es la que decide si esto
+                        es un préstamo en curso o un incumplimiento. */}
                     <Dato
-                      termino="Desde"
-                      valor={
-                        momentoPrestamo
-                          ? new Date(Number(momentoPrestamo) * 1000).toLocaleDateString("es-PE", {
-                              day: "2-digit",
-                              month: "short",
-                            })
-                          : "—"
-                      }
+                      termino={enMora ? "Venció el" : "Vence el"}
+                      valor={venceEl ? venceEl.toLocaleDateString("es-PE", { day: "2-digit", month: "short" }) : "—"}
+                      alerta={!!enMora}
                     />
+                  </div>
+                )}
+
+                {/* El fondo no perdona ni castiga para siempre: quien está en mora no puede
+                    volver a pedir hasta que devuelva, y devolver le reabre la puerta. Es la
+                    misma regla que en una junta —un incumplimiento se cura pagando— y decirlo
+                    aquí importa, porque un mensaje que solo condena empuja a abandonar. */}
+                {prestamoActivo && enMora && (
+                  <div className="mb-6 border-l-2 border-[--color-mal] pl-5">
+                    <p className="k-corazon mb-2 text-[--color-mal]">Este préstamo está vencido.</p>
+                    <p className="max-w-xl text-sm leading-relaxed text-[--color-gris]">
+                      El fondo no te va a prestar de nuevo mientras siga sin devolverse, y cualquiera puede comprobar
+                      que está vencido consultando el contrato. No hace falta que nadie lo denuncie: la fecha pasó y eso
+                      basta. Se arregla devolviéndolo, y al hacerlo tu línea vuelve a abrirse.
+                    </p>
                   </div>
                 )}
 

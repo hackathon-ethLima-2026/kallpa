@@ -236,11 +236,11 @@ no tiene la navegación del resto, para no distraer de la única pregunta que re
 
 | Contrato | Resultado |
 |---|---|
-| `junta` | **53 pasan** |
+| `junta` | **55 pasan** |
 | `score_engine` | **37 pasan** |
-| `pool` | **17 pasan** |
+| `pool` | **21 pasan** |
 | `mock_usdc` | **6 pasan** |
-| **Total** | **113** |
+| **Total** | **119** |
 
 ### Cobertura de la interfaz
 
@@ -266,38 +266,25 @@ en la interfaz son, a propósito, de otro tipo:
 
 ---
 
-## 5. Lo que falta, dicho sin maquillar
+## 5. Lo que falta
 
-### 🔴 Fallarle al fondo no cuesta nada
+Todo lo que este documento listaba como pendiente en su primera versión está cerrado. Queda
+una cosa, y es deliberada.
 
-`request_loan` **no tiene plazo** —guarda el instante y no lo lee nunca más—, no hay interés, y
-**ninguna de las ocho señales del modelo viene del Pool**. Se puede pedir un préstamo, no
-devolverlo jamás, y el score no se mueve. La única penalidad es que esa dirección no puede
-pedir otra vez.
+### El incumplimiento del crédito no baja el score — a propósito
 
-Hoy el crédito es, en rigor, **un adelanto sin plazo**. Contradice la promesa de "reputación
-bidireccional" del build spec: la mitad de la junta se cumple, la del crédito no.
+El préstamo ya tiene plazo, la mora se deriva del reloj y quien no devuelve no vuelve a
+recibir crédito. Lo que **no** se hizo es meter ese incumplimiento dentro del modelo, y el
+[ADR-0016](./adr/0016-la-mora-del-credito-vive-en-el-pool.md) explica por qué: el score mide
+comportamiento **dentro de una junta**, y esa es exactamente la razón por la que significa
+algo — describe el historial que ningún banco ve. El incumplimiento de un préstamo sí tiene
+registro, y lo tiene en el propio fondo, que es público y consultable.
 
-*Arreglo:* darle plazo al préstamo y que el Pool rechace a quien tenga uno vencido es barato.
-Que ese incumplimiento entre en la reputación exige una novena señal y reentrenar el modelo,
-lo que cambia el `modelHash` y obliga a rehacer la verificación de equivalencia.
+Quien preste mirando a Kallpa lee las dos fuentes. Las dos están en la cadena.
 
-### 🟡 Una junta terminada todavía acepta disputas
-
-La interfaz dice "su historial quedó fijo para siempre". `report_dispute` valida seis cosas y
-**ninguna es que la junta haya terminado**. Dos fuentes de verdad que se contradicen: o se pone
-la guarda, o se cambia el texto.
-
-### 🟡 La attestation publicada se pierde al recargar
-
-`score_engine.latest_attestation` existe en el contrato pero **la interfaz nunca la llama**. El
-identificador solo vive en el estado de React, así que quien publica una attestation y recarga
-la página se queda sin el enlace a su propio comprobante.
-
-### 🟢 `score_global` no tiene cota de gas
-
-Una llamada de lectura por cada junta del miembro. Con las que hay no importa; con cincuenta,
-sí.
+Meterlo en el score exigiría una novena señal, reentrenar el modelo, y con ello cambiar el
+`modelHash` que viaja dentro de cada attestation ya emitida — invalidando la verificación de
+equivalencia exacta que es en sí misma un entregable comprometido.
 
 ### Fuera de código
 

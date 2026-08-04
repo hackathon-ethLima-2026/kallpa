@@ -406,6 +406,53 @@ fn las_disputas_se_acumulan_por_miembro() {
 }
 
 #[test]
+fn a_una_junta_terminada_ya_no_se_le_reportan_disputas() {
+    // La interfaz promete que al terminar "su historial quedó fijo para siempre", y sin esta
+    // guarda el contrato no lo cumplía: la disputa es la única señal que alguien escribe a
+    // mano, así que se podía seguir hundiendo el score de un miembro por una junta cerrada
+    // hace meses. Peor aún, sin defensa posible: en una junta terminada ya no queda ninguna
+    // cuota por pagar con la que compensar.
+    let (vm, mut c, m) = junta_de(4);
+
+    // Se reparten los cuatro turnos: la junta queda completa.
+    for i in 1..=4u64 {
+        vm.set_block_timestamp(INICIO + i * PERIODO + 1);
+        c.distribute(0).unwrap();
+    }
+    let (_, _, turno, total, _, _) = c.junta_state(0);
+    assert_eq!(turno, total, "los cuatro turnos se repartieron");
+
+    let (_, _, _, _, _, _, _, antes) = c.history(0, m[2]);
+    vm.set_sender(m[1]);
+    match c.report_dispute(0, m[2]) {
+        Err(JuntaError::JuntaCompleta(e)) => assert_eq!(e.juntaId, 0),
+        otro => panic!("una junta cerrada no admite juicios nuevos: {otro:?}"),
+    }
+
+    let (_, _, _, _, _, _, _, despues) = c.history(0, m[2]);
+    assert_eq!(
+        antes, despues,
+        "el historial de una junta cerrada no se mueve"
+    );
+}
+
+#[test]
+fn mientras_la_junta_sigue_viva_si_se_puede_reportar() {
+    // El complemento de la prueba anterior: la guarda nueva no puede haber cerrado la puerta
+    // a la señal cuando todavía sirve para algo. Sin esta, poner `if true` en la guarda
+    // pasaría desapercibido.
+    let (vm, mut c, m) = junta_de(4);
+    vm.set_block_timestamp(INICIO + PERIODO + 1);
+    c.distribute(0).unwrap();
+
+    vm.set_sender(m[1]);
+    c.report_dispute(0, m[2]).unwrap();
+
+    let (_, _, _, _, _, _, _, disputas) = c.history(0, m[2]);
+    assert_eq!(disputas, 1);
+}
+
+#[test]
 fn un_extrano_no_puede_reportar_a_nadie() {
     // El agujero original: se validaba que el reportado fuera miembro, nunca quién
     // llamaba. Cualquier dirección del mundo podía hundir el score de cualquier miembro
